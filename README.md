@@ -26,7 +26,7 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    | skill | kind | idea |
    |---|---|---|
    | `probe` | explore | act once per untested object type (rare / small first); learn what each move does |
-   | `replay` | exploit | replay a winning recipe from memory on analogous objects (same type, else same colour) |
+   | `replay` | exploit | replay a winning recipe from memory, mapped onto the objects that play the same role (structure mapping) |
    | `repeat` | exploit | keep doing what just changed the world |
    | `click_all` | exploit | click every object of a type that did something |
    | `go_to` | exploit | plan a route on the mental map to each untried object type |
