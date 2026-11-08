@@ -4,6 +4,7 @@ The agent only uses what every game gives: a colour grid, the available actions,
 signals. No game ids, no fixed grid size, no meaning attached to any colour.
 """
 
+import hashlib
 import random
 from collections import Counter, deque
 from dataclasses import dataclass, field
@@ -13,6 +14,11 @@ from scipy.ndimage import label
 
 MOVES = (1, 2, 3, 4)
 CLICK = 6
+
+
+def sid(arr):
+    """Stable screen id (Python's hash() is randomised per process, which made runs irreproducible)."""
+    return hashlib.blake2b(arr.tobytes(), digest_size=8).hexdigest()
 
 
 # ---------------------------------------------------------------- perception
@@ -401,7 +407,7 @@ class Agent:
         self.actions = [a.value if hasattr(a, "value") else int(a) for a in f.available_actions] or list(MOVES)
         self.objs = objects(self.grid, self.hud)
         masked = np.where(self.hud, -1, self.grid)
-        self.state = hash(masked.tobytes())
+        self.state = sid(masked)
         if self.state not in self.keys_at:  # executable actions on this screen, with a salience tier
             keys = [(0, (m, None)) for m in self.actions if m != CLICK]
             if CLICK in self.actions:
@@ -508,7 +514,7 @@ class Agent:
         seen = {v for v in self.edges.values()}
         gain = 10.0 * level_up + 1.0 * (changed and not died) - 5.0 * died
         if not died and not level_up:
-            s1 = hash(np.where(self.hud, -1, new).tobytes()) if new.shape == self.hud.shape else None
+            s1 = sid(np.where(self.hud, -1, new)) if new.shape == self.hud.shape else None
             self.edges[(s0, k)] = self.exec_edges[(s0, ek)] = s1
             gain = gain if s1 not in seen else 0.2 * gain
         st = self.mem.skill_stats.setdefault(skill, [1.0, 1])

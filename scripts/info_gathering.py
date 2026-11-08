@@ -1,9 +1,16 @@
 # How well does an agent gather information? same observer for every agent
-import sys, logging; logging.disable(logging.CRITICAL)
+import os
+import sys
+import logging
+
+if os.environ.get("PYTHONHASHSEED") != "0":  # fixed hash seed -> identical runs (set order of byte-keyed types)
+    os.execve(sys.executable, [sys.executable] + sys.argv, {**os.environ, "PYTHONHASHSEED": "0"})
+
+logging.disable(logging.CRITICAL)
 sys.path.insert(0, ".")
 import numpy as np, arc_agi
 from arcengine import GameAction
-from agent import Agent, RandomAgent, objects, hud_bands
+from agent import Agent, RandomAgent, objects, hud_bands, sid
 from run import DEV
 
 B = 300
@@ -25,7 +32,7 @@ def measure(game, agent):
         if f.state.name == "GAME_OVER":
             f = env.reset(); agent.on_reset(); g = np.array(f.frame[-1]); continue
         objs = objects(g, hud)
-        s = hash(np.where(hud, -1, g).tobytes()); seen.add(s)
+        s = sid(np.where(hud, -1, g)); seen.add(s)
         act, data = agent.choose(f)
         o = hit(objs, data["x"], data["y"]) if data else None
         k = (act, o.type if o else None)
@@ -43,7 +50,7 @@ def measure(game, agent):
             c = len(probed & init_types) / len(init_types)
             if step in (50, 150, 300): cover[step] = c
             if t_all is None and c == 1: t_all = step
-    seen.add(hash(np.where(hud, -1, g).tobytes()))
+    seen.add(sid(np.where(hud, -1, g)))
     return dict(eff=eff / B, states=len(seen), red=redundant / B, click=click, cover=cover, t_all=t_all)
 
 rows = {n: {} for n in ("random", "v1")}

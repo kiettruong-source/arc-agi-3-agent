@@ -124,6 +124,20 @@ acted on).
 - **Result (dev, 1000 actions):** **7 levels** (cd82, ls20, sp80, tn36, tu93, vc33 ×2), score 0.15. Random fallback 8290 → **95** actions; frontier 11664; replay 708 (7 recipes). Exploration (300 actions): 1287 screens, wasted 38% → **26%**, click coverage 74% → 64%.
 - **Conclusion:** systematic graph search instead of random actions more than doubles levels (3 → 7) and opens movement games (ls20, tu93 first levels). Replay now fires often but has low value (0.06 per step): recipes are stored but frequently fail on the next level. Coverage dropped because probing hands over to the frontier earlier.
 
+### E9 — Reproducibility fix and 3-seed baseline (2026-11-08)
+- **Problem found:** screen ids used Python's `hash()`, which is randomised per process; two runs of the same v4 code gave 7 and 6 levels. Single-run comparisons E4-E8 therefore carry hidden run-to-run noise.
+- **Fix:** stable screen id (`sid()`, blake2b of the HUD-masked grid); `run.py` and `scripts/info_gathering.py` re-execute with `PYTHONHASHSEED=0`. Two identical runs now give identical results.
+- **Method:** `uv run run.py dev --seeds 3` (seed = game seed + agent seed, fresh memory per seed), v4 vs random.
+- **Result:**
+
+  | agent | levels per seed | levels mean ± sd | score per seed | score mean ± sd |
+  |---|---|---|---|---|
+  | random | 1, 2, 1 | 1.33 ± 0.58 | 0.00, 0.32, 0.01 | 0.11 ± 0.18 |
+  | **v4** | 7, 7, 6 | **6.67 ± 0.58** | 0.15, 0.15, 0.15 | **0.15 ± 0.00** |
+
+  v4 levels by game (all seeds): cd82 1, ls20 1, sp80 1, tn36 1, vc33 2; tu93 1 in 2 of 3 seeds.
+- **Conclusion:** v4 beats random by ~5 levels, far outside the seed spread. The score is fragile: random's seed 1 completed sp80 quickly once (4.76) and nearly matched v4's mean score, so **levels are the primary comparison number** and the score is reported alongside. The games are almost deterministic under the seed (only tu93 varied).
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -133,8 +147,10 @@ acted on).
 | v2 | 0.01 | 2 | 1254 | 38% | 75% |
 | v3 | 0.09 | 3 | 1242 | 38% | 74% |
 | v4 | 0.15 | 7 | 1287 | 26% | 64% |
+| v4, 3 seeds | 0.15 ± 0.00 | 6.67 ± 0.58 | | | |
+| random, 3 seeds | 0.11 ± 0.18 | 1.33 ± 0.58 | | | |
 
-Single seed per version; score differences of one level are within noise. Held-out split not yet evaluated.
+Rows without ± are single runs made before the reproducibility fix (E9) and carry run-to-run noise of about one level. Held-out split not yet evaluated.
 
 ## 5. Design decisions
 
@@ -157,6 +173,7 @@ Single seed per version; score differences of one level are within noise. Held-o
 | HUD detection masked a button near the border | self-check (`test_agent.py`) | changes on the clicked object don't vote; repeat evidence required |
 | Player's own movement voted as HUD on small grids | maze self-check | player boxes excluded; margin scales with grid size |
 | Greedy go_to oscillated against walls | E4 trace (ls20) | mental map + BFS route planning |
+| Runs not reproducible (`hash()` randomised per process) | two runs of v4 gave 7 vs 6 levels | stable `sid()` screen ids + `PYTHONHASHSEED=0` in run scripts (E9) |
 
 ## 7. Task breakdown
 
@@ -177,7 +194,7 @@ working memory) and a checkable done-criterion. Order = suggested sequence; late
 
 | id | task | serves | done when | depends on |
 |---|---|---|---|---|
-| T1 | Multi-seed evaluation (≥ 3 seeds), levels as primary number, mean ± spread | G | `run.py` reports per-seed and mean levels / score | – |
+| T1 | ✅ Multi-seed evaluation (≥ 3 seeds), levels as primary number, mean ± spread | G | `run.py --seeds N` reports per-seed and mean levels / score (done, E9) | – |
 | T2 | **Goal-hypothesis space**: hypotheses = goal template × object roles; eliminated by wins, losses, failed attempts; explore = most-eliminating action, exploit = best surviving hypothesis | R | random fallback < 30% of actions; dev levels ≥ v3 | R1, R2, T1 |
 | T3 | Looser type key (colour + size class + tracking) | G | sk48 / ka59 probes stop growing without bound; coverage ≥ v3 | R3 |
 | T4 | go_to tries every reachable target; floor learned from the whole path | R | movement games: object types touched > 0 in ls20, tr87, g50t, tu93 | – |
@@ -192,7 +209,7 @@ working memory) and a checkable done-criterion. Order = suggested sequence; late
 ```bash
 uv sync
 uv run python test_agent.py                  # self-checks
-uv run run.py dev [--agent random]           # E4-E6 scores
+uv run run.py dev --seeds 3 [--agent random]  # E9 baseline (E4-E8 used single runs)
 uv run python scripts/info_gathering.py      # exploration metrics
 uv run --with scipy python scripts/cluster_objects.py   # E1
 ```

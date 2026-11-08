@@ -11,8 +11,8 @@ information) and **exploiting** (using a fundamental skill or a remembered recip
 uv sync
 cp .env.example .env          # optional: ARC_API_KEY (an anonymous key is used otherwise)
 uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r reset, q quit
-uv run run.py dev             # evaluate the agent on the dev games
-uv run run.py dev --agent random   # baseline
+uv run run.py dev --seeds 3   # evaluate the agent on the dev games (levels / score per seed, mean ± sd)
+uv run run.py dev --seeds 3 --agent random   # baseline
 uv run python test_agent.py   # self-check
 uv run python scripts/info_gathering.py   # exploration metrics vs random
 ```
@@ -51,7 +51,8 @@ The toolkit's official scorecard (RHAE-style):
 - overall: mean over games; also reported: levels completed, actions
 
 Protocol: tune only on the 15 **dev** games; the 10 **held-out** games (`run.py heldout`) are for final
-numbers. Fixed budget of 1000 actions per game, always compared with the random baseline.
+numbers. Fixed budget of 1000 actions per game, at least 3 seeds, always compared with the random baseline.
+Levels completed is the primary comparison number (the squared score is dominated by single fast levels).
 
 ## Repo layout
 
