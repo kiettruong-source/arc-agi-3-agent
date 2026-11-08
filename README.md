@@ -56,6 +56,7 @@ numbers. Fixed budget of 1000 actions per game, always compared with the random 
 
 - `agent.py`: agent, skills, memory · `run.py`: evaluation · `play.py`: play by hand · `test_agent.py`: self-check
 - `scripts/`: exploration analysis (object clustering, object map)
+- `docs/protocol.md`: experiment protocol (setup, metric, experiments E1-E7, decisions, bugs, next steps)
 - `docs/research/`: research notes (landscape, Tycho, Go-Explore, clustering experiments)
 
 Game source files downloaded by the toolkit (`environment_files/`) are not part of this repo and the agent never reads them.

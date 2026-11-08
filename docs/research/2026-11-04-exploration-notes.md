@@ -263,6 +263,24 @@ Notes: score differences are within one level (noise); levels and exploration me
 Main remaining waste: random fallback ~8300 / 15000 actions once map + types are exhausted -> explicit hypothesis
 space (goal guesses) is the next slice. Only 3 recipes learned so far, so structure mapping rarely fires yet.
 
+## 13. Weakness diagnosis, v3 (2026-11-08)
+
+Per-game run, dev games, 1000 actions, shared memory. All games: random 8997, probe 2915, repeat 1316,
+explore_map 1185, go_to 202, click_all 172, replay 22.
+
+| # | weakness | evidence | root cause |
+|---|---|---|---|
+| 1 | nothing to do after exploring | random 9000/15000; click games ft09/s5i5/tn36/vc33: ~30-50 probes then 900+ random | no goal hypotheses; click games need sequences / combinations |
+| 2 | ignores the step budget | game overs per game 4-42 (sp80 42; s5i5, tu93, vc33 19) | counter seen but not treated as time left; random burns it, game over resets |
+| 3 | endless novelty | sk48 987 probes / 154 types; ka59 148; cd82 648 probes | exact-shape type key: changing / growing objects always look new |
+| 4 | movement games never test touching | ls20, tr87, g50t, tu93: 0 types tried; ls20 36 places then 937 random | go_to gives up too fast; floor learned too narrowly |
+| 5 | repeat loops | ar25 repeat 754/1000 | repeat restarts on the same action, no memory |
+| 6 | analogy rarely used | replay 22 actions | only 3 recipes (3 wins) |
+
+Summary: good at basic information (object effects, controls, walkable space), weak at turning it into a goal —
+the original research question. Fix order: (1) explicit goal-hypothesis space; (2) looser type key (colour + size
+class); (3) go_to tries all reachable targets, floor from whole path; (4) budget-aware switch to exploit.
+
 ## Sources
 
 - ARC-AGI Community Leaderboard — https://arcprize.org/leaderboard/community
