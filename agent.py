@@ -273,6 +273,38 @@ class Replay(Skill):
         return (act, o)
 
 
+class Frontier(Skill):
+    """Graph exploration (arXiv 2512.24156): every screen is a node, every action tried there an edge.
+    Do an untried action here; otherwise walk the shortest known path to the nearest screen that still has one.
+    Small objects / plain actions first (tier 0); larger tiers are allowed only when nothing smaller is left."""
+    name, kind = "frontier", "explore"
+
+    def untested(self, a, s, p):
+        return [k for t, k in a.keys_at.get(s, []) if t <= p and (s, k) not in a.tried_exec]
+
+    def next(self, a):
+        adj = {}
+        for (s0, k), s1 in a.exec_edges.items():
+            if s1 is not None and s1 != s0:
+                adj.setdefault(s0, []).append((k, s1))
+        for p in range(4):  # raise the tier only when nothing of the current tier is reachable
+            here = self.untested(a, a.state, p)
+            if here:
+                return a.exec_key(here[0])
+            first = {a.state: None}
+            q = deque([a.state])
+            while q:
+                s = q.popleft()
+                for k, s1 in adj.get(s, []):
+                    if s1 in first:
+                        continue
+                    first[s1] = first[s] or k
+                    if self.untested(a, s1, p):
+                        return a.exec_key(first[s1])
+                    q.append(s1)
+        return None
+
+
 # ---------------------------------------------------------------- agent
 class Agent:
     """Each step: finish the current skill episode, or pick a new skill (explore first, then best exploit)."""
@@ -292,6 +324,7 @@ class Agent:
 
     def new_level(self):
         self.tried = set()       # (state, action key) already done
+        self.tried_exec, self.exec_edges, self.keys_at = set(), {}, {}  # state graph for frontier exploration
         self.edges = {}          # (state, key) -> next state; for the shortest winning path
         self.start_state = None
         self.level_tried, self.level_reached, self.level_failed_recipes, self.level_clicked = set(), set(), set(), set()
@@ -304,6 +337,13 @@ class Agent:
 
     def tested(self, act, obj):
         return (self.state, self.key(act, obj)) in self.tried
+
+    def exec_key(self, k):
+        """Graph action key -> (action, object | None) on the current screen."""
+        if k[0] == CLICK:
+            o = next((o for o in self.objs if (o.x, o.y) == (k[1], k[2])), None)
+            return (CLICK, o) if o else None
+        return (k[0], None)
 
     def suspect_hud(self, o):
         """Object inside a border band that already changed on its own once: probably a counter, don't touch."""
@@ -362,6 +402,14 @@ class Agent:
         self.objs = objects(self.grid, self.hud)
         masked = np.where(self.hud, -1, self.grid)
         self.state = hash(masked.tobytes())
+        if self.state not in self.keys_at:  # executable actions on this screen, with a salience tier
+            keys = [(0, (m, None)) for m in self.actions if m != CLICK]
+            if CLICK in self.actions:
+                for o in self.objs:
+                    if not self.suspect_hud(o):
+                        keys.append((0 if o.size <= 30 else 1 if o.size <= 120 else 2 if o.size <= 500 else 3,
+                                     (CLICK, o.x, o.y)))
+            self.keys_at[self.state] = sorted(keys, key=lambda x: x[0])
         if self.start_state is None:
             self.start_state = self.state
         b = self.player_box() if self.player else None
@@ -393,7 +441,10 @@ class Agent:
             if self.skill:
                 self.skill.start(self)
                 step = self.skill.next(self)
-        if step is None:  # nothing applicable: random fallback
+        if step is None:  # nothing applicable: graph exploration, then random
+            self.skill = Frontier()
+            step = self.skill.next(self)
+        if step is None:
             self.skill = None
             act = self.rng.choice(self.actions)
             step = (act, self.rng.choice(self.objs) if act == CLICK and self.objs else None)
@@ -417,6 +468,8 @@ class Agent:
         died = f_new.state.name == "GAME_OVER"
 
         self.tried.add((s0, k))
+        ek = (CLICK, obj.x, obj.y) if act == CLICK and obj else (act, None)
+        self.tried_exec.add((s0, ek))
         if act == CLICK and obj:
             self.level_tried.add(k)
             self.level_clicked.add((obj.x, obj.y))
@@ -455,8 +508,9 @@ class Agent:
         seen = {v for v in self.edges.values()}
         gain = 10.0 * level_up + 1.0 * (changed and not died) - 5.0 * died
         if not died and not level_up:
-            self.edges[(s0, k)] = hash(np.where(self.hud, -1, new).tobytes()) if new.shape == self.hud.shape else None
-            gain = gain if self.edges[(s0, k)] not in seen else 0.2 * gain
+            s1 = hash(np.where(self.hud, -1, new).tobytes()) if new.shape == self.hud.shape else None
+            self.edges[(s0, k)] = self.exec_edges[(s0, ek)] = s1
+            gain = gain if s1 not in seen else 0.2 * gain
         st = self.mem.skill_stats.setdefault(skill, [1.0, 1])
         st[0] += gain
         st[1] += 1

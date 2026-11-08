@@ -93,7 +93,35 @@ def test_structure_mapping():
     assert (data["y"], data["x"]) == (5, 7), data                 # mapped to the new odd one out
 
 
+def test_frontier_exploration():
+    # lights puzzle: 3 identical buttons each toggle their own lamp; the level is won only at lamps (on, off, on).
+    # probe tries the button *type* once, click_all presses all three -> (on, on, on), not a win.
+    # graph exploration must then search combinations instead of clicking randomly.
+    def scene(lamps):
+        g = np.zeros((16, 16), int)
+        for i, on in enumerate(lamps):
+            g[12:14, 2 + 5 * i:4 + 5 * i] = 6          # button i (same type for all three)
+            g[3, 3 + 5 * i] = 2 if on else 9           # lamp i
+        return g
+    agent, lamps, won = Agent(), [0, 0, 0], False
+    f = frame(scene(lamps))
+    for step in range(30):
+        act, data = agent.choose(f)
+        i = (data["x"] - 2) // 5 if 12 <= data["y"] <= 13 else None
+        if i is not None and 0 <= i < 3 and data["x"] <= 3 + 5 * i:
+            lamps[i] ^= 1
+        won = lamps == [1, 0, 1]
+        f2 = frame(scene(lamps), levels=int(won))
+        agent.update(f, f2)
+        f = f2
+        if won:
+            break
+    assert won, (lamps, agent.usage)
+    assert "frontier" in agent.usage and "random" not in agent.usage, agent.usage
+
+
 if __name__ == "__main__":
+    test_frontier_exploration()
     test_structure_mapping()
     test_perception()
     test_explore_then_exploit()

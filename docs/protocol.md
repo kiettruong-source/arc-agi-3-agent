@@ -25,7 +25,7 @@ How each characteristic maps onto the agent, how it is measured, and where it st
 |---|---|---|---|
 | Generalization | no game ids, colours or action numbers in the code; object types, roles, move vectors, floor and walls are all learned per game | score / levels on the **held-out** games (never tuned on); colour-permuted and flipped game variants | design in place; not yet measured on held-out or variants |
 | Cross-domain transfer | analogy memory shared across levels and games; recipes mapped by **structure mapping** (relations over surface); skills defined on learned facts, reusable in any game | transfer ablation: held-out run with memory carried over from dev vs fresh memory (actions per level, levels) | implemented; rarely used (only 3 recipes, replay 22 actions) |
-| Reasoning and working memory | common-sense priors (objects, agentness, counters, salience); working memory per level (mental map, tried actions, roles); continuous learning (memory updates every action, across games); **goal reasoning via hypothesis elimination** | share of actions spent on random fallback; levels solved; actions until the goal is identified | memory and priors in place; **goal reasoning missing** (random fallback 60% of actions, E7) |
+| Reasoning and working memory | common-sense priors (objects, agentness, counters, salience); working memory per level (mental map, tried actions, roles); continuous learning (memory updates every action, across games); **goal reasoning via hypothesis elimination** | share of actions spent on random fallback; levels solved; actions until the goal is identified | memory and priors in place; **goal reasoning missing**: v4 replaced random actions by systematic graph search (E8), but no goal hypotheses yet |
 
 ## 2. Setup
 
@@ -102,6 +102,13 @@ acted on).
 - **Result:** vc33 counter clicks 13 → 0 (8 distinct types in 8 clicks). **Dev 0.09 / 3 levels** (sp80, tn36, vc33) — most levels so far. Exploration: 1242 screens, 38% wasted, 74% coverage.
 - **Check:** synthetic test — level 2 changes colours and positions; replay still picks the new odd-one-out.
 
+### E8 — Agent v4: graph exploration (2026-11-08)
+- **Question:** does the best published non-LLM technique (graph exploration, arXiv 2512.24156) fix weakness 1 (random fallback)?
+- **Change:** every HUD-masked screen is a node, every action tried there an edge (clicks keyed per object, so identical buttons stay distinct); actions carry a salience tier by object size; when no skill applies, do an untried action of the lowest tier here, else walk the shortest known path to the nearest screen with one, raising the tier only when nothing is reachable. Game-over actions count as tried (avoids the paper's reset-loop bug).
+- **Check:** synthetic lights puzzle (3 identical buttons, win only at on-off-on) solved by graph exploration, never random.
+- **Result (dev, 1000 actions):** **7 levels** (cd82, ls20, sp80, tn36, tu93, vc33 ×2), score 0.15. Random fallback 8290 → **95** actions; frontier 11664; replay 708 (7 recipes). Exploration (300 actions): 1287 screens, wasted 38% → **26%**, click coverage 74% → 64%.
+- **Conclusion:** systematic graph search instead of random actions more than doubles levels (3 → 7) and opens movement games (ls20, tu93 first levels). Replay now fires often but has low value (0.06 per step): recipes are stored but frequently fail on the next level. Coverage dropped because probing hands over to the frontier earlier.
+
 ### E7 — Weakness diagnosis, v3 (2026-11-08)
 - **Method:** per-game breakdown of where the 1000 actions go (dev games).
 - **Result:** random fallback 8997/15000 actions; probe 2915; repeat 1316; explore_map 1185; go_to 202; click_all 172; replay 22.
@@ -125,6 +132,7 @@ acted on).
 | v1 | 0.24 | 2 | 682 | 63% | 74% |
 | v2 | 0.01 | 2 | 1254 | 38% | 75% |
 | v3 | 0.09 | 3 | 1242 | 38% | 74% |
+| v4 | 0.15 | 7 | 1287 | 26% | 64% |
 
 Single seed per version; score differences of one level are within noise. Held-out split not yet evaluated.
 

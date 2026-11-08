@@ -31,9 +31,10 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    | `click_all` | exploit | click every object of a type that did something |
    | `go_to` | exploit | plan a route on the mental map to each untried object type |
    | `explore_map` | explore | plan a route to the nearest place the player has never been |
+   | `frontier` | explore | graph exploration: untried action here, else shortest known path to the nearest screen with one (small objects first) |
 
 3. **Explore vs exploit**: replay first if a recipe matches; otherwise explore while unknown things remain,
-   unless an exploit skill's track record (value per step) is better. Random fallback when nothing applies.
+   unless an exploit skill's track record (value per step) is better. When no skill applies: graph exploration (`frontier`), random only as a last resort.
 4. **Mental map** (movement games): floor colours learned from where the player steps, walls from blocked moves,
    places visited; routes planned by breadth-first search. Any action that moves the player counts as a move.
 5. **Analogy memory** (`Memory`), shared across levels and games: per-type roles (tries / effects / deaths),
