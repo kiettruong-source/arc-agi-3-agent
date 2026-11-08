@@ -14,6 +14,7 @@ uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r
 uv run run.py dev             # evaluate the agent on the dev games
 uv run run.py dev --agent random   # baseline
 uv run python test_agent.py   # self-check
+uv run python scripts/info_gathering.py   # exploration metrics vs random
 ```
 
 ## How the agent works (`agent.py`)
@@ -28,12 +29,17 @@ uv run python test_agent.py   # self-check
    | `replay` | exploit | replay a winning recipe from memory on analogous objects (same type, else same colour) |
    | `repeat` | exploit | keep doing what just changed the world |
    | `click_all` | exploit | click every object of a type that did something |
-   | `go_to` | exploit | walk the player to each untried object type |
+   | `go_to` | exploit | plan a route on the mental map to each untried object type |
+   | `explore_map` | explore | plan a route to the nearest place the player has never been |
 
 3. **Explore vs exploit**: replay first if a recipe matches; otherwise explore while unknown things remain,
    unless an exploit skill's track record (value per step) is better. Random fallback when nothing applies.
-4. **Analogy memory** (`Memory`), shared across levels and games: per-type roles (tries / effects / deaths),
-   winning recipes (shortest known path, stored as action + object type), per-skill value.
+4. **Mental map** (movement games): floor colours learned from where the player steps, walls from blocked moves,
+   places visited; routes planned by breadth-first search. Any action that moves the player counts as a move.
+5. **Analogy memory** (`Memory`), shared across levels and games: per-type roles (tries / effects / deaths),
+   winning recipes (shortest known path), per-skill value. Recipes store each target's **relational description**
+   (odd one out, how many alike, relative size, side of the player) and are mapped onto new levels by
+   **structure mapping**: relations weigh more than colour / shape.
 
 ## Evaluation metric
 

@@ -215,6 +215,54 @@ Reading: v1 >= random but both are near zero. go_to burns most of the budget at 
 random fallback; (3) HUD detection needs repeat evidence (fixed after a self-check caught border buttons being masked).
 Held-out split not run yet (reserved for final numbers).
 
+## 10. Information-gathering metrics, v1 vs random (2026-11-08)
+
+`uv run python scripts/info_gathering.py` — same observer for both agents, 300 actions, 15 dev games.
+
+| metric | random | v1 |
+|---|---|---|
+| useful actions (change outside HUD) | 47% | 69% |
+| click games: initial object types probed by 300 | 36% | 74% |
+| click games: all initial types probed | 0/11 | 4/11 (ar25 @7, cn04 @12, ft09 @16, vc33 @101) |
+| unique screens reached | 898 | 682 |
+| wasted actions (repeat same state-action) | 55% | 63% |
+
+- Strong: learning what object types do in click games (2x coverage; vc33 / tn36 useful actions 1-4% -> 33-34%).
+- Weak: spatial exploration in movement games — ls20 78 -> 8 screens (93% wasted), tr87 192 -> 27, g50t / tu93 87-90% wasted: go_to bumps into walls.
+- Coverage plateaus at 58-67% in several click games (guess: exploit value overtakes probe, or cross-game memory marks a type inert).
+
+## 11. Plan: explicit hypothesis space
+
+v1 has only implicit hypotheses (type roles, recipes). Next design:
+- hypotheses = goal template x object types (touch(T), click_all(T), match(A,B), avoid(T)), generated from the frame
+- status per hypothesis (untested / failed / survived N); wins, losses, failed attempts eliminate
+- explore = action that eliminates most remaining hypotheses; exploit = execute top surviving hypothesis with its skill
+- skills = how hypotheses are tested; analogy memory = prior ranking (what won before first)
+
+Order: (1) fix go_to stuck + premature exploration stop; (2) frontier navigation instead of random fallback; (3) hypothesis space; (4) per-level attribution log; (5) held-out run once.
+
+## 12. Agent v2 / v3 (2026-11-08)
+
+v2 = mental map for movement (floor colours learned from where the player steps, walls from blocked / fatal moves,
+visited places) + BFS route planning (`go_to` to untried object types, `explore_map` to the nearest unvisited spot);
+any non-click action that moves the player counts as a move (no hard-coded action ids); HUD margin scales with grid
+size and ignores the player's / clicked object's own changes.
+v3 = v2 + counter-bar fix (border bands that changed once on their own are never probed / clicked) +
+**structure mapping** for analogy (Gentner): recipe steps store an object's relational description (odd-one-out,
+multiplicity, relative size, side of the player) + surface (type, colour, shape); replay maps one-to-one onto the
+best-scoring object in the new level, relations weighted above surface, threshold 0.5.
+
+| version | dev score | levels | screens (info, 300 act) | wasted | click cover |
+|---|---|---|---|---|---|
+| random | 0.00 | 1 | 898 | 55% | 36% |
+| v1 | 0.24 | 2 (tn36, vc33) | 682 | 63% | 74% |
+| v2 | 0.01 | 2 (sp80, vc33) | 1254 | 38% | 75% |
+| v3 | 0.09 | 3 (sp80, tn36, vc33) | 1242 | 38% | 74% |
+
+Notes: score differences are within one level (noise); levels and exploration metrics are the more stable signal.
+Main remaining waste: random fallback ~8300 / 15000 actions once map + types are exhausted -> explicit hypothesis
+space (goal guesses) is the next slice. Only 3 recipes learned so far, so structure mapping rarely fires yet.
+
 ## Sources
 
 - ARC-AGI Community Leaderboard — https://arcprize.org/leaderboard/community

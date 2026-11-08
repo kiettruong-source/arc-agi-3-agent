@@ -46,21 +46,22 @@ def objects(grid, hud):
     return out
 
 
-def hud_bands(prev, new, exclude=None):
+def hud_bands(prev, new, exclude=()):
     """Thin changes hugging the border = counters / bars. Returns a mask of whole bands (a HUD vote).
-    `exclude` = box (y0, x0, y1, x1) of the object just clicked: its own change is an effect, not HUD."""
+    `exclude` = boxes (y0, x0, y1, x1) of things the agent acted on / moved: their change is an effect, not HUD."""
     mask = np.zeros(new.shape, bool)
     lab, n = label(prev != new, structure=np.ones((3, 3)))
     H, W = new.shape
+    e = max(1, min(H, W) // 16)  # border margin scales with the grid (4 cells on 64x64)
     for i in range(1, n + 1):
         ys, xs = np.nonzero(lab == i)
         y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
-        if exclude and not (y1 < exclude[0] or y0 > exclude[2] or x1 < exclude[1] or x0 > exclude[3]):
+        if any(not (y1 < b[0] or y0 > b[2] or x1 < b[1] or x0 > b[3]) for b in exclude):
             continue
         # ponytail: border+thin heuristic; a player walking along the edge could be masked. Learn per-cell stats if it bites.
-        if y1 - y0 <= 2 and (y0 <= 3 or y1 >= H - 4):
+        if y1 - y0 <= 2 and (y0 < e or y1 >= H - e):
             mask[y0:y1 + 1, :] = True
-        elif x1 - x0 <= 2 and (x0 <= 3 or x1 >= W - 4):
+        elif x1 - x0 <= 2 and (x0 < e or x1 >= W - e):
             mask[:, x0:x1 + 1] = True
     return mask
 
@@ -70,7 +71,7 @@ def hud_bands(prev, new, exclude=None):
 class Memory:
     """Analogy memory, shared across levels and games in one run."""
     roles: dict = field(default_factory=dict)    # type -> {"tries", "effects", "deaths"}
-    recipes: list = field(default_factory=list)  # [[(action, target type | None), ...], ...]
+    recipes: list = field(default_factory=list)  # [[(action, target description | None), ...], ...]
     skill_stats: dict = field(default_factory=dict)  # name -> [value_sum, steps]
 
     def role(self, t):
@@ -79,10 +80,44 @@ class Memory:
     def known(self, t):
         return t in self.roles and self.roles[t]["tries"] > 0
 
-    def analog(self, t, objs):
-        """Objects matching type t: exact type first, else same colour (the analogy fallback)."""
-        exact = [o for o in objs if o.type == t]
-        return exact or [o for o in objs if o.colour == t[0]]
+
+
+# ---------------------------------------------------------------- structure mapping (analogy between levels / games)
+def describe(o, objs, player_box=None):
+    """An object's relational description: its role in the scene, not just its looks."""
+    sizes = sorted({p.size for p in objs})
+    rel = None
+    if player_box:
+        pcx, pcy = (player_box[1] + player_box[3]) / 2, (player_box[0] + player_box[2]) / 2
+        rel = (int(np.sign(round(o.cx - pcx))), int(np.sign(round(o.cy - pcy))))
+    return {
+        "type": o.type, "colour": o.colour, "shape": o.type[1:3],                     # surface
+        "odd": sum(p.colour == o.colour for p in objs) == 1,                          # relation: odd one out
+        "same": sum(p.type == o.type for p in objs),                                  # relation: how many like it
+        "rank": sizes.index(o.size) / max(1, len(sizes) - 1) if o.size in sizes else 0.5,  # relation: relative size
+        "rel": rel,                                                                   # relation: side of the player
+    }
+
+
+def similarity(d, e):
+    """Structure-mapping score in [0, 1]: relations weigh more than surface attributes (Gentner)."""
+    s = 3.0 * (d["type"] == e["type"])                                  # literally the same kind of thing
+    s += 2.0 * (d["odd"] == e["odd"])
+    s += 1.0 * min(d["same"], e["same"]) / max(d["same"], e["same"], 1)
+    s += 1.0 * (1 - abs(d["rank"] - e["rank"]))
+    s += 0.5 * (d["shape"] == e["shape"]) + 0.5 * (d["colour"] == e["colour"])
+    total = 8.0
+    if d["rel"] is not None and e["rel"] is not None:
+        s += 1.0 * (d["rel"] == e["rel"])
+        total += 1.0
+    return s / total
+
+
+def best_match(desc, objs, player_box=None, used=(), threshold=0.5):
+    """The object in the new scene that plays the same role, or None if nothing maps well enough."""
+    scored = [(similarity(desc, describe(o, objs, player_box)), o) for o in objs if (o.x, o.y) not in used]
+    scored = [x for x in scored if x[0] >= threshold]
+    return max(scored, key=lambda x: x[0])[1] if scored else None
 
 
 # ---------------------------------------------------------------- skills
@@ -106,6 +141,8 @@ class Probe(Skill):
         if CLICK in a.actions:
             colour_count = Counter(o.colour for o in a.objs)
             for o in sorted(a.objs, key=lambda o: (colour_count[o.colour], o.size)):
+                if a.suspect_hud(o):
+                    continue
                 r = a.mem.roles.get(o.type)
                 if r and (r["deaths"] or (r["tries"] and not r["effects"])):
                     continue  # known deadly or inert: skip
@@ -146,7 +183,7 @@ class ClickAll(Skill):
     name, kind = "click_all", "exploit"
 
     def todo(self, a):
-        return [o for o in a.objs if a.mem.roles.get(o.type, {}).get("effects") and not a.mem.roles[o.type]["deaths"]
+        return [o for o in a.objs if not a.suspect_hud(o) and a.mem.roles.get(o.type, {}).get("effects") and not a.mem.roles[o.type]["deaths"]
                 and (o.x, o.y) not in a.level_clicked]
 
     def applicable(self, a):
@@ -158,7 +195,7 @@ class ClickAll(Skill):
 
 
 class GoTo(Skill):
-    """Exploit: walk the player to each untried object type until touching (reach / touch template)."""
+    """Exploit: plan a route on the mental map to the nearest untried object type, walk it (reach / touch template)."""
     name, kind = "go_to", "exploit"
 
     def targets(self, a):
@@ -166,29 +203,36 @@ class GoTo(Skill):
                 and not a.mem.roles.get(o.type, {}).get("deaths") and o.size < a.grid.size // 8]
 
     def applicable(self, a):
-        return bool(a.player) and bool(a.move_vec) and bool(self.targets(a))
-
-    def start(self, a):
-        self.stuck = 0
-        self.target = None
+        return a.player_box() is not None and bool(a.move_vec) and bool(self.targets(a))
 
     def next(self, a):
-        p = a.player_pos()
         ts = self.targets(a)
-        if p is None or not ts:
+        if not ts or a.player_box() is None:
             return None
-        if self.target not in {o.type for o in ts}:
-            self.target = min(ts, key=lambda o: abs(o.cx - p[0]) + abs(o.cy - p[1])).type
-        goal = min((o for o in ts if o.type == self.target), key=lambda o: abs(o.cx - p[0]) + abs(o.cy - p[1]))
-        dist = abs(goal.cx - p[0]) + abs(goal.cy - p[1])
-        self.stuck = 0 if a.last_changed else self.stuck + 1
-        if dist <= 2 or self.stuck >= 3:
-            a.level_reached.add(self.target)
+        hit = [o for o in ts if a.touching(o)]
+        if hit:  # arrived: this goal guess has been tried
+            a.level_reached.update(o.type for o in hit)
             return None
-        # pick the learned move that brings the player closest; skip moves that just failed in this state
-        ok = [m for m in a.move_vec if not a.tested_noop(m)] or list(a.move_vec)
-        m = min(ok, key=lambda m: abs(p[0] + a.move_vec[m][0] - goal.cx) + abs(p[1] + a.move_vec[m][1] - goal.cy))
+        m = a.plan(lambda box: any(a.touching(o, box) for o in ts), allow=ts)
+        if m is None:  # nothing reachable on the current map
+            a.level_reached.update(o.type for o in ts)
+            return None
+        a.nav_target = ts
         return (m, None)
+
+
+class ExploreMap(Skill):
+    """Explore places: plan a route to the nearest reachable spot the player has never stood on."""
+    name, kind = "explore_map", "explore"
+
+    def applicable(self, a):
+        return a.player_box() is not None and bool(a.move_vec) and not GoTo().applicable(a)
+
+    def next(self, a):
+        if a.player_box() is None:
+            return None
+        m = a.plan(lambda box: box[:2] not in a.visited)
+        return (m, None) if m is not None else None
 
 
 class Replay(Skill):
@@ -199,7 +243,7 @@ class Replay(Skill):
         for i, r in enumerate(a.mem.recipes):
             if i in a.level_failed_recipes:
                 continue
-            if all(t is None or a.mem.analog(t, a.objs) for _, t in r):
+            if all(d is None or best_match(d, a.objs, a.player_box()) for _, d in r):
                 return i
         return None
 
@@ -207,22 +251,26 @@ class Replay(Skill):
         return self.usable(a) is not None
 
     def start(self, a):
-        self.i, self.step = self.usable(a), 0
+        self.i, self.step, self.used = self.usable(a), 0, set()
 
     def next(self, a):
         r = a.mem.recipes[self.i]
         if self.step >= len(r):
             a.level_failed_recipes.add(self.i)  # ran to the end without finishing the level
             return None
-        act, t = r[self.step]
+        act, d = r[self.step]
         self.step += 1
         if act not in a.actions:
             a.level_failed_recipes.add(self.i)
             return None
-        if t is None:
+        if d is None:
             return (act, None)
-        objs = a.mem.analog(t, a.objs)
-        return (act, objs[0]) if objs else None
+        o = best_match(d, a.objs, a.player_box(), self.used)  # one-to-one mapping within a replay
+        if o is None:
+            a.level_failed_recipes.add(self.i)
+            return None
+        self.used.add((o.x, o.y))
+        return (act, o)
 
 
 # ---------------------------------------------------------------- agent
@@ -232,13 +280,14 @@ class Agent:
     def __init__(self, memory=None, seed=0):
         self.mem = memory or Memory()
         self.rng = random.Random(seed)
-        self.skills = [Probe(), Replay(), Repeat(), ClickAll(), GoTo()]
+        self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
         self.usage = Counter()
         self.new_game()
 
     # ---- bookkeeping
     def new_game(self):
         self.player, self.move_vec, self.hud, self.hud_votes = set(), {}, None, None
+        self.floor = set()       # colours the player has walked onto (mental map: free space)
         self.new_level()
 
     def new_level(self):
@@ -247,6 +296,8 @@ class Agent:
         self.start_state = None
         self.level_tried, self.level_reached, self.level_failed_recipes, self.level_clicked = set(), set(), set(), set()
         self.last, self.last_changed, self.skill = None, False, None
+        self.visited, self.blocked, self.nav_target = set(), set(), None  # mental map of this level
+        self.desc = {}  # type -> relational description when acted on (for structure mapping)
 
     def key(self, act, obj):
         return (act, obj.type if obj else None) if act == CLICK else (act, None)
@@ -254,15 +305,53 @@ class Agent:
     def tested(self, act, obj):
         return (self.state, self.key(act, obj)) in self.tried
 
-    def tested_noop(self, act):
-        k = (self.state, (act, None))
-        return k in self.tried and self.edges.get(k) == self.state
+    def suspect_hud(self, o):
+        """Object inside a border band that already changed on its own once: probably a counter, don't touch."""
+        return self.hud_votes is not None and bool(self.hud_votes[o.box[0]:o.box[2] + 1, o.box[1]:o.box[3] + 1].any())
 
-    def player_pos(self):
-        ps = [o for o in self.objs if o.type in self.player]
+    def player_box(self, objs=None):
+        """Union box (y0, x0, y1, x1) of the player's parts."""
+        ps = [o for o in (self.objs if objs is None else objs) if o.type in self.player]
         if not ps:
             return None
-        return (sum(o.cx for o in ps) / len(ps), sum(o.cy for o in ps) / len(ps))
+        return (min(o.box[0] for o in ps), min(o.box[1] for o in ps), max(o.box[2] for o in ps), max(o.box[3] for o in ps))
+
+    def steps(self):
+        return {m: (round(dx), round(dy)) for m, (dx, dy) in self.move_vec.items() if round(dx) or round(dy)}
+
+    def touching(self, o, box=None):
+        """Player box (grown by one step) overlaps the object."""
+        b = box or self.player_box()
+        r = max([max(abs(dx), abs(dy)) for dx, dy in self.steps().values()] or [1])
+        return not (b[2] + r < o.box[0] or b[0] - r > o.box[2] or b[3] + r < o.box[1] or b[1] - r > o.box[3])
+
+    def plan(self, goal, allow=()):
+        """Shortest route on the mental map (BFS over player positions). Returns the first move, or None.
+        Free = floor colours + the player's own colours (+ cells of `allow` objects); known blocked moves are walls."""
+        start = self.player_box()
+        H, W = self.grid.shape
+        pcols = {o.colour for o in self.objs if o.type in self.player}
+        free = np.isin(self.grid, list(self.floor | pcols)) & ~self.hud
+        for o in allow:
+            free[o.box[0]:o.box[2] + 1, o.box[1]:o.box[3] + 1] = True
+        steps = self.steps()
+        first = {start: None}
+        q = deque([start])
+        while q and len(first) < 20000:  # ponytail: plain BFS, A* if grids get big
+            b = q.popleft()
+            for m, (dx, dy) in steps.items():
+                if (b[:2], m) in self.blocked:
+                    continue
+                nb = (b[0] + dy, b[1] + dx, b[2] + dy, b[3] + dx)
+                if nb in first or nb[0] < 0 or nb[1] < 0 or nb[2] >= H or nb[3] >= W:
+                    continue
+                if not free[nb[0]:nb[2] + 1, nb[1]:nb[3] + 1].all():
+                    continue
+                first[nb] = first[b] or m
+                if goal(nb):
+                    return first[nb]
+                q.append(nb)
+        return None
 
     def perceive(self, f):
         self.grid = np.array(f.frame[-1])
@@ -275,6 +364,9 @@ class Agent:
         self.state = hash(masked.tobytes())
         if self.start_state is None:
             self.start_state = self.state
+        b = self.player_box() if self.player else None
+        if b:
+            self.visited.add(b[:2])
 
     # ---- decide
     def value(self, s):
@@ -320,9 +412,6 @@ class Agent:
         k = self.key(act, obj)
         before, s0 = self.objs, self.state
         new = np.array(f_new.frame[-1]) if f_new.frame else self.grid
-        if new.shape == self.grid.shape:  # a band becomes HUD after changing on 2 separate steps
-            self.hud_votes += hud_bands(self.grid, new, obj.box if obj else None)
-            self.hud = self.hud_votes >= 2
         changed = new.shape != self.grid.shape or bool(((self.grid != new) & ~self.hud).any())
         level_up = f_new.levels_completed > f_prev.levels_completed
         died = f_new.state.name == "GAME_OVER"
@@ -331,20 +420,36 @@ class Agent:
         if act == CLICK and obj:
             self.level_tried.add(k)
             self.level_clicked.add((obj.x, obj.y))
+            self.desc[obj.type] = describe(obj, before, self.player_box(before) if self.player else None)
             r = self.mem.role(obj.type)
             r["tries"] += 1
             r["effects"] += changed
             r["deaths"] += died
 
         # agentness: types that moved under a movement action are the player; learn each move's displacement
-        if act in MOVES and changed and not level_up and new.shape == self.grid.shape:
+        if act != CLICK and not level_up and new.shape == self.grid.shape:
+            b0 = self.player_box(before) if self.player else None
             after = objects(new, self.hud)
-            moved = self.displacements(before, after)
+            moved = self.displacements(before, after) if changed else {}
             if moved:
                 self.player = set(moved) if not self.player else (self.player & set(moved)) or set(moved)
                 dx = float(np.mean([d[0] for d in moved.values()]))
                 dy = float(np.mean([d[1] for d in moved.values()]))
                 self.move_vec[act] = (dx, dy)
+            # mental map: where the player stepped is floor; a move that didn't move it (or killed it) is a wall
+            b1 = self.player_box(after) if self.player else None
+            if b0 and (b1 == b0 or died):
+                self.blocked.add((b0[:2], act))
+            elif b0 and b1:
+                region = self.grid[b1[0]:b1[2] + 1, b1[1]:b1[3] + 1]
+                pcols = {o.colour for o in before if o.type in self.player}
+                self.floor |= {int(c) for c in np.unique(region)} - pcols
+        if new.shape == self.grid.shape:  # a band becomes HUD after changing on 2 separate steps
+            boxes = [obj.box] if obj and not self.suspect_hud(obj) else []
+            if act != CLICK and self.player:
+                boxes += [b for b in (self.player_box(before), self.player_box(objects(new, self.hud))) if b]
+            self.hud_votes += hud_bands(self.grid, new, boxes)
+            self.hud = self.hud_votes >= 2
 
         # skill credit: new state = small win, level = big win, death = loss
         seen = {v for v in self.edges.values()}
@@ -397,7 +502,8 @@ class Agent:
         while prev[s]:
             s, k = prev[s]
             path.append(k)
-        recipe = path[::-1]
+        recipe = [(act, self.desc.get(t, {"type": t, "colour": t[0], "shape": t[1:3], "odd": False, "same": 1,
+                                         "rank": 0.5, "rel": None}) if t else None) for act, t in path[::-1]]
         if recipe not in self.mem.recipes:
             self.mem.recipes.append(recipe)
 
