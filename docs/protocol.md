@@ -9,6 +9,24 @@ advance. Background research, sources and design notes: [research/2026-11-04-exp
 How can an agent find out **what an unknown game wants** (its goal / end condition) using as few actions as
 possible, by gathering information cheaply, giving what it sees meaning, and applying common-sense priors?
 
+## 1b. Goal: an agent with the key characteristics of AGI
+
+The agent should show, within the ARC-AGI-3 setting, the key characteristics of artificial general intelligence:
+
+- **Generalization:** it can learn and adapt to entirely new, unfamiliar domains.
+- **Cross-domain transfer:** it can transfer skills and abstract knowledge from one area to another without
+  task-specific reprogramming.
+- **Reasoning and working memory:** it has human-like common sense, critical thinking, independent problem-solving
+  and continuous learning, rather than just predicting the next pattern.
+
+How each characteristic maps onto the agent, how it is measured, and where it stands:
+
+| characteristic | in the agent | measured by | status (v3) |
+|---|---|---|---|
+| Generalization | no game ids, colours or action numbers in the code; object types, roles, move vectors, floor and walls are all learned per game | score / levels on the **held-out** games (never tuned on); colour-permuted and flipped game variants | design in place; not yet measured on held-out or variants |
+| Cross-domain transfer | analogy memory shared across levels and games; recipes mapped by **structure mapping** (relations over surface); skills defined on learned facts, reusable in any game | transfer ablation: held-out run with memory carried over from dev vs fresh memory (actions per level, levels) | implemented; rarely used (only 3 recipes, replay 22 actions) |
+| Reasoning and working memory | common-sense priors (objects, agentness, counters, salience); working memory per level (mental map, tried actions, roles); continuous learning (memory updates every action, across games); **goal reasoning via hypothesis elimination** | share of actions spent on random fallback; levels solved; actions until the goal is identified | memory and priors in place; **goal reasoning missing** (random fallback 60% of actions, E7) |
+
 ## 2. Setup
 
 | item | value |
@@ -132,13 +150,34 @@ Single seed per version; score differences of one level are within noise. Held-o
 | Player's own movement voted as HUD on small grids | maze self-check | player boxes excluded; margin scales with grid size |
 | Greedy go_to oscillated against walls | E4 trace (ls20) | mental map + BFS route planning |
 
-## 7. Next steps
+## 7. Task breakdown
 
-1. Explicit goal-hypothesis space (goal template × object roles; eliminate on wins / losses / failed attempts) — fixes weaknesses 1, 2, 6.
-2. Looser type key (colour + size class) — weakness 3.
-3. go_to tries all reachable targets; floor learned from the whole path — weakness 4.
-4. Budget-aware switch from exploring to exploiting — weakness 2.
-5. Multi-seed evaluation (≥ 3 seeds), then one held-out run.
+Each task names the AGI characteristic it serves (G = generalization, T = cross-domain transfer, R = reasoning and
+working memory) and a checkable done-criterion. Order = suggested sequence; later tasks build on earlier ones.
+
+### 7a. Research tasks
+
+| id | question | serves | method | output |
+|---|---|---|---|---|
+| R1 | Which kinds of goals do ARC-AGI-3 games have? | R | play each **dev** game by hand (`play.py`), write down the goal in one sentence (dev only, to avoid overfitting) | goal-template catalogue (touch, collect all, match pattern, click order, …) with frequencies |
+| R2 | How to choose the action that eliminates the most goal hypotheses? | R | literature: active learning / version spaces, Tycho, OPINE-World, Kepler | selection rule for the hypothesis space (T2) |
+| R3 | How to keep object identity when objects change shape, grow or rotate? | G | object tracking / persistence literature; inspect sk48, ka59, cd82 | type-key design for T3 |
+| R4 | How to measure transfer and generalization honestly? | G, T | design: memory ablation (carried vs fresh), colour permutation / flip wrapper, seeds and confidence intervals | evaluation protocol for T1, T6, T7 |
+| R5 | What should the optional LLM adviser adjust, and with which model? | R | test small vision models on bwUniCluster A100 40 GB (4-bit 27-31B, 7-12B); prompt = object list + image | adviser interface and model choice for T9 |
+
+### 7b. Implementation tasks
+
+| id | task | serves | done when | depends on |
+|---|---|---|---|---|
+| T1 | Multi-seed evaluation (≥ 3 seeds), levels as primary number, mean ± spread | G | `run.py` reports per-seed and mean levels / score | – |
+| T2 | **Goal-hypothesis space**: hypotheses = goal template × object roles; eliminated by wins, losses, failed attempts; explore = most-eliminating action, exploit = best surviving hypothesis | R | random fallback < 30% of actions; dev levels ≥ v3 | R1, R2, T1 |
+| T3 | Looser type key (colour + size class + tracking) | G | sk48 / ka59 probes stop growing without bound; coverage ≥ v3 | R3 |
+| T4 | go_to tries every reachable target; floor learned from the whole path | R | movement games: object types touched > 0 in ls20, tr87, g50t, tu93 | – |
+| T5 | Budget-aware switch: as the step counter runs low, stop exploring and test the best hypothesis | R | fewer game overs per game than v3 | T2 |
+| T6 | Transfer ablation: held-out with memory carried from dev vs fresh memory | T | table of actions per level / levels, both conditions | T1, T2 |
+| T7 | Robustness variants: colour-permuted and flipped games | G | score / levels within the seed spread of the original games | T1 |
+| T8 | **Held-out evaluation, once**, with the final agent | G | final results table in the report | T1-T7 |
+| T9 | Optional LLM adviser on bwUniCluster (settings only, core runs without it) | R | core vs core + adviser on dev, same seeds | R5, T2 |
 
 ## 8. Reproduce
 
