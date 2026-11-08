@@ -1,0 +1,20 @@
+[project]
+name = "project-arc-agi-agent-ws2627"
+version = "0.1.0"
+description = "Minimal ARC-AGI-3 agent: cheap exploration, object clustering, analogy memory, explore/exploit skills"
+authors = [
+    { name = "kiettruong-source", email = "247475247+kiettruong-source@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "arc-agi>=0.9.9",
+    "python-dotenv>=1.2.4",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+project-arc-agi-agent-ws2627 = "project_arc_agi_agent_ws2627:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
