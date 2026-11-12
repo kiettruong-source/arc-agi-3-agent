@@ -488,6 +488,7 @@ class Agent:
         self.player, self.move_vec, self.hud, self.hud_votes = set(), {}, None, None
         self.floor = set()       # colours the player has walked onto (mental map: free space)
         self.goal, self.level = None, 0   # goal schema learned in this game (schema, source start features)
+        self.solutions = []  # per level won: the actions to replay in a clean run
         self.new_level()
 
     def new_level(self):
@@ -506,6 +507,7 @@ class Agent:
         self.attempt_steps, self.budget = 0, None  # actions since the level (re)started; step limit seen at a game over
         self.hyps, self.goal_conds, self.goal_why, self.refuted = [], None, None, []  # proposed goals waiting / in test
         self.level_steps, self.asks, self.last_ask = 0, 0, -999
+        self.attempt_log = []  # actions sent since the level (re)started
 
     def key(self, act, obj):
         return (act, obj.type if obj else None) if act == CLICK else (act, None)
@@ -647,11 +649,12 @@ class Agent:
         act, obj = step
         self.pending = (act, obj, self.skill.name if self.skill else "random")
         self.usage[self.pending[2]] += 1
+        data = None
         if act == CLICK:
-            if obj is None:
-                return act, {"x": self.rng.randrange(self.grid.shape[1]), "y": self.rng.randrange(self.grid.shape[0])}
-            return act, {"x": obj.x, "y": obj.y}
-        return act, None
+            data = {"x": obj.x, "y": obj.y} if obj else \
+                {"x": self.rng.randrange(self.grid.shape[1]), "y": self.rng.randrange(self.grid.shape[0])}
+        self.sent = (act, data)  # exactly what goes to the game (kept for the clean run)
+        return act, data
 
     # ---- learn
     def update(self, f_prev, f_new):
@@ -666,6 +669,7 @@ class Agent:
         # clearly before a limit already seen is blamed on what was just touched; the first one never is.
         self.attempt_steps += 1
         self.level_steps += 1
+        self.attempt_log.append(self.sent)
         blame = died and ("deadline" in self.off or (self.budget is not None and self.attempt_steps < 0.8 * self.budget))
         if died:
             self.budget = max(self.budget or 0, self.attempt_steps)
@@ -728,6 +732,7 @@ class Agent:
 
         self.last, self.last_changed = (act, obj), changed
         if level_up:
+            self.solutions.append(self.solution(s0))
             self.store_recipe(s0, k)
             self.learn_goal(f_new)
             self.level += 1
@@ -840,6 +845,37 @@ class Agent:
                     out[t] = d
         return out
 
+    def solution(self, s_last):
+        """What to replay in a clean run of this level: `short` = shortest known route through the screen graph
+        to the winning action, each step with the screen expected after it; `actual` = the attempt that won."""
+        adj = {}
+        for (s0, k), s1 in self.exec_edges.items():
+            if s1 is not None and s1 != s0:
+                adj.setdefault(s0, []).append((k, s1))
+        prev, q = {self.start_state: None}, deque([self.start_state])
+        while q and s_last not in prev:
+            s = q.popleft()
+            for k, s1 in adj.get(s, []):
+                if s1 not in prev:
+                    prev[s1] = (s, k)
+                    q.append(s1)
+        short = None
+        if s_last in prev:
+            route, s = [], s_last
+            while prev[s]:
+                s0, k = prev[s]
+                route.append((k, s))
+                s = s0
+            short = [((k[0], {"x": k[1], "y": k[2]} if len(k) == 3 else None), self.seen.get(s1))
+                     for k, s1 in reversed(route)] + [(self.sent, None)]
+            if any(act == CLICK and data is None for (act, data), _ in short):
+                short = None  # the route uses a random click whose target was not recorded
+        return {"short": short, "actual": [(step, None) for step in self.attempt_log]}
+
+    def same_screen(self, grid, expect):
+        """Does the screen match the expected one, counters aside?"""
+        return grid.shape == expect.shape and not ((grid != expect) & ~self.hud).any()
+
     def store_recipe(self, s_last, k_last):
         """Shortest known path start -> winning action, stored as (action, type) steps."""
         prev = {self.start_state: None}
@@ -864,7 +900,7 @@ class Agent:
             self.mem.recipes.append(recipe)
 
     def on_reset(self):
-        self.attempt_steps = 0
+        self.attempt_steps, self.attempt_log = 0, []
         self.last, self.last_changed, self.skill = None, False, None
 
 

@@ -5,6 +5,7 @@ from types import SimpleNamespace as NS
 import numpy as np
 
 from agent import Agent, hud_bands, objects
+from run import clean_run, play  # the real runner code (re-executes once with a fixed hash seed)
 
 
 def frame(grid, levels=0, state="NOT_FINISHED", actions=(6,), before=None):
@@ -298,6 +299,90 @@ def test_llm_http():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
+class ToyEnv:
+    """A toy world behind the toolkit's interface (reset / step), so the real runner code can be tested.
+    world = dict(levels, actions, start(level) -> state, move(state, action, data) -> state, draw(state) -> grid,
+    won(state) -> bool)."""
+
+    def __init__(self, world):
+        self.w, self.level, self.state = world, 0, None
+
+    def show(self, **kw):
+        return frame(self.w["draw"](self.state), actions=self.w["actions"], **kw)
+
+    def reset(self):
+        self.state = self.w["start"](self.level)   # restarts the current level
+        return self.show(levels=self.level)
+
+    def step(self, action, data=None):
+        self.state = self.w["move"](self.state, int(action.name[-1]), data)
+        if not self.w["won"](self.state):
+            return self.show(levels=self.level)
+        won, self.level = self.w["draw"](self.state), self.level + 1
+        if self.level == self.w["levels"]:
+            return frame(won, levels=self.level, state="WIN", actions=self.w["actions"])
+        self.state = self.w["start"](self.level)
+        return self.show(levels=self.level, before=won)
+
+
+def collect_world(levels):
+    def draw(st):
+        g = np.zeros((16, 16), int)
+        for y, x in st["coins"]:
+            g[y, x] = 4
+        for y, x, c in st["junk"]:
+            g[y:y + 2, x:x + 2] = c
+        return g
+    return dict(levels=len(levels), actions=(6,), draw=draw, won=lambda st: not st["coins"],
+                start=lambda i: {"coins": list(levels[i][0]), "junk": levels[i][1]},
+                move=lambda st, act, d: {**st, "coins": [c for c in st["coins"] if c != (d["y"], d["x"])]})
+
+
+def reach_world(levels):
+    def draw(st):
+        L, g = st["L"], np.zeros((12, 12), int)
+        for y, x in L["walls"]:
+            g[y, x] = 5
+        for y, x, c in L["junk"]:
+            g[y, x] = c
+        g[L["target"]] = 3
+        g[st["pos"]] = 2
+        return g
+
+    def move(st, act, d):
+        dy, dx = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[act]
+        ny, nx = st["pos"][0] + dy, st["pos"][1] + dx
+        return {**st, "pos": (ny, nx)} if 0 <= ny < 12 and 0 <= nx < 12 and draw(st)[ny, nx] == 0 else st
+    return dict(levels=len(levels), actions=(1, 2, 3, 4), draw=draw, move=move,
+                start=lambda i: {"L": levels[i], "pos": levels[i]["player"]},
+                won=lambda st: max(abs(st["pos"][0] - st["L"]["target"][0]), abs(st["pos"][1] - st["L"]["target"][1])) <= 1)
+
+
+def test_clean_run():
+    # explore with the real runner, then replay: every level again, never in more actions than before
+    for world, least in ((collect_world(COLLECT), 3 + 5), (reach_world(REACH), None)):
+        agent = Agent()
+        stats = play(lambda: ToyEnv(world), agent, 400)
+        assert len(stats["actions_per_level"]) == world["levels"], stats
+        clean = clean_run(lambda: ToyEnv(world), agent)
+        assert clean["levels"] == world["levels"] and clean["actions"] <= sum(stats["actions_per_level"]), (clean, stats)
+        assert least is None or clean["actions"] == least, clean      # collect world: exactly one click per coin
+    # a shortcut that does not work (the win depends on something the screen does not show):
+    # the replay notices, resets the level once and repeats the attempt that really won
+    charger, door = {"x": 2, "y": 2}, {"x": 9, "y": 9}
+
+    def draw(st):
+        g = np.zeros((12, 12), int)
+        g[2, 2], g[9, 9] = 6, 9
+        return g
+    world = dict(levels=1, actions=(6,), draw=draw, start=lambda i: {"charge": 0, "open": False}, won=lambda st: st["open"],
+                 move=lambda st, act, d: {"charge": st["charge"] + (d == charger), "open": d == door and st["charge"] >= 2})
+    agent = Agent()
+    agent.solutions = [{"short": [((6, door), None)],
+                        "actual": [((6, charger), None), ((6, charger), None), ((6, door), None)]}]
+    assert clean_run(lambda: ToyEnv(world), agent) == {"levels": 1, "actions": 1 + 1 + 3}
+
+
 def test_timeout_is_not_deadly():
     # a click world with a step limit of 10 and no way to win: no object may end up "deadly"
     def run(agent):
@@ -328,6 +413,7 @@ if __name__ == "__main__":
     test_general_reasoning()
     test_llm_goals_are_checked()
     test_llm_http()
+    test_clean_run()
     test_timeout_is_not_deadly()
     test_frontier_exploration()
     test_structure_mapping()

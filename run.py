@@ -1,8 +1,12 @@
 """Evaluate an agent on ARC-AGI-3 games with the official scorecard metric.
 
-uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,llm | none]
+uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,llm | none] [--clean-run]
 
 --label NAME saves the full result to runs/<date>-NAME.json (the evidence file behind every reported number).
+--clean-run  after the normal play (the "first exposure" numbers), a second play replays the shortest known
+             solution of every level the agent solved. The toolkit scores the best play of a game, so this gives a
+             second number, "best play": it says how short the found solutions are, not how efficiently the agent
+             learns. Both numbers are always reported separately.
 
 Metric (toolkit scorecard): per level min((human_baseline / actions)^2 * 100, 115), 0 if not completed;
 per game a level-index-weighted mean capped at 100; overall = mean over games.
@@ -28,6 +32,7 @@ load_dotenv()
 logging.disable(logging.CRITICAL)
 
 import arc_agi
+import numpy as np
 from arcengine import GameAction
 
 import llm
@@ -38,8 +43,9 @@ HELDOUT = ["bp35", "lf52", "lp85", "m0r0", "r11l", "re86", "sb26", "sc25", "su15
 DEV = ["ar25", "cd82", "cn04", "dc22", "ft09", "g50t", "ka59", "ls20", "s5i5", "sk48", "sp80", "tn36", "tr87", "tu93", "vc33"]
 
 
-def play(arc, game, agent, budget, seed=0):
-    env = arc.make(game, seed=seed)
+def play(make, agent, budget):
+    """One play of one game. `make()` returns an environment (reset / step)."""
+    env = make()
     f = env.reset()
     agent.new_game()
     g0, l0 = len(getattr(agent, "goal_log", [])), len(getattr(agent, "llm_log", []))
@@ -68,12 +74,57 @@ def play(arc, game, agent, budget, seed=0):
             "llm": getattr(agent, "llm_log", [])[l0:]}
 
 
-def run_seed(games, kind, budget, seed, off=None):
+def clean_run(make, agent):
+    """A fresh play that replays what the agent found: per level the shortest known route, checked after every
+    step; on a mismatch one level reset and the attempt that actually won. Stops at the first level it cannot redo."""
+    env = make()
+    f = env.reset()
+    used = done = 0
+    for sol in agent.solutions:
+        level, tried = f.levels_completed, False
+        for steps in (sol["short"], sol["actual"]):
+            if not steps:
+                continue
+            if tried:  # the short route failed: back to the level's start
+                f = env.reset()
+                used += 1
+            tried = True
+            for (act, data), expect in steps:
+                f2 = env.step(GameAction[f"ACTION{act}"], data=data)
+                used += 1
+                if f2 is None:
+                    break
+                f = f2
+                if f.levels_completed > level or f.state.name in ("GAME_OVER", "WIN"):
+                    break
+                if expect is not None and not agent.same_screen(np.array(f.frame[-1]), expect):
+                    break
+            if f.levels_completed > level:
+                break
+        if f.levels_completed <= level:
+            break
+        done += 1
+        if f.state.name == "WIN":
+            break
+    return {"levels": done, "actions": used}
+
+
+def first_play(e):
+    """The first real play of a game on the scorecard (the toolkit also lists empty plays)."""
+    return next((r for r in e.runs if r.actions), e.runs[0])
+
+
+def run_seed(games, kind, budget, seed, off=None, clean=False):
     """One full run: fresh scorecard, one analogy memory shared across all games."""
     arc = arc_agi.Arcade()
     mem = Memory()
     agent = Agent(mem, seed, off) if kind == "v1" else RandomAgent(seed)
-    stats = [play(arc, g, agent, budget, seed) for g in games]
+    stats = []
+    for g in games:
+        make = lambda g=g: arc.make(g, seed=seed)
+        st = play(make, agent, budget)
+        st["clean"] = clean_run(make, agent) if clean and getattr(agent, "solutions", None) else None
+        stats.append(st)
     return arc.get_scorecard(), agent, mem, stats
 
 
@@ -84,6 +135,7 @@ def main():
     ap.add_argument("--budget", type=int, default=1000)
     ap.add_argument("--seeds", type=int, default=1, help="number of seeds (game + agent), 0..n-1")
     ap.add_argument("--label", help="save the result to runs/<date>-<label>.json")
+    ap.add_argument("--clean-run", action="store_true", help="add a second play that replays the found solutions")
     ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, llm (comma-separated); 'none' = all on; "
                                   "default: the agent's own default (deadline and replay5 off, see protocol E12)")
     args = ap.parse_args()
@@ -97,22 +149,30 @@ def main():
         games += {"dev": DEV, "heldout": HELDOUT, "all": DEV + HELDOUT}.get(g, [g])
 
     off = None if args.off is None else [x for x in args.off.split(",") if x and x != "none"]
-    runs = [run_seed(games, args.agent, args.budget, seed, off) for seed in range(args.seeds)]
+    runs = [run_seed(games, args.agent, args.budget, seed, off, args.clean_run) for seed in range(args.seeds)]
     seeds = range(args.seeds)
-    print(f"\n{'game':6} " + " ".join(f"{'s' + str(i):>9}" for i in seeds) + "   (levels / score per seed)")
+    print(f"\n{'game':6} " + " ".join(f"{'s' + str(i):>9}" for i in seeds) + "   (first exposure: levels / score per seed)")
     for j, g in enumerate(games):
         cells = []
         for sc, *_ in runs:
-            e = sc.environments[j]
-            cells.append(f"{e.levels_completed:2}/{e.score:5.2f}")
+            r = first_play(sc.environments[j])
+            cells.append(f"{r.levels_completed:2}/{r.score:5.2f}")
         print(f"{g:6} " + " ".join(f"{c:>9}" for c in cells))
-    lv = [sum(e.levels_completed for e in sc.environments) for sc, *_ in runs]
-    sco = [sc.score for sc, *_ in runs]
+    lv = [sum(first_play(e).levels_completed for e in sc.environments) for sc, *_ in runs]
+    sco = [statistics.mean(first_play(e).score for e in sc.environments) for sc, *_ in runs]
+    best = [sc.score for sc, *_ in runs]
     apl = [n for *_, stats in runs for st in stats for n in st["actions_per_level"]]
     sd = lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0
     print(f"\nagent={args.agent} games={len(games)} budget={args.budget} seeds={args.seeds} off={sorted(Agent.DEFAULT_OFF) if off is None else off}")
+    print("FIRST EXPOSURE (every action from the first frame counts):")
     print(f"levels per seed {lv}  ->  mean {statistics.mean(lv):.2f} +/- {sd(lv):.2f}")
     print(f"score  per seed {[round(x, 2) for x in sco]}  ->  mean {statistics.mean(sco):.2f} +/- {sd(sco):.2f}")
+    if args.clean_run:
+        cl = [[st["clean"] for st in stats if st["clean"]] for *_, stats in runs]
+        print("BEST PLAY (with a clean run: replay of the found solutions; not a measure of learning efficiency):")
+        print(f"score  per seed {[round(x, 2) for x in best]}  ->  mean {statistics.mean(best):.2f} +/- {sd(best):.2f}")
+        print(f"clean-run levels redone per seed {[sum(c['levels'] for c in s) for s in cl]}, "
+              f"extra actions per seed {[sum(c['actions'] for c in s) for s in cl]}")
     print(f"actions per completed level: median {statistics.median(apl) if apl else '-'}  (n={len(apl)})")
     print(f"game overs per seed {[sum(st['game_overs'] for st in stats) for *_, stats in runs]}")
     ranks = [g["rank"] for *_, stats in runs for st in stats for g in st["goals"] if g["rank"] is not None]
@@ -131,10 +191,10 @@ def main():
         print("seed 0 skill usage:", dict(agent.usage.most_common()))
         print(f"seed 0 memory: {len(mem.roles)} object types, {len(mem.recipes)} recipes")
     if args.label:
-        save(args, games, runs, lv, sco, apl, prov)
+        save(args, games, runs, lv, sco, apl, prov, best)
 
 
-def save(args, games, runs, lv, sco, apl, prov):
+def save(args, games, runs, lv, sco, apl, prov, best):
     """Run record: everything needed to trace a reported number back to code + command."""
     sd = lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0
     record = {
@@ -144,11 +204,20 @@ def save(args, games, runs, lv, sco, apl, prov):
         "llm": {"model": os.environ.get("LLM_MODEL"), **llm.CALLS} if llm.enabled() else None,
         "summary": {"levels_per_seed": lv, "levels_mean": statistics.mean(lv), "levels_sd": sd(lv),
                     "score_per_seed": sco, "score_mean": statistics.mean(sco), "score_sd": sd(sco),
-                    "actions_per_level_median": statistics.median(apl) if apl else None},
+                    "actions_per_level_median": statistics.median(apl) if apl else None,
+                    "note": "levels / score = first exposure (first play of each game)",
+                    "best_play_score_per_seed": best if args.clean_run else None,
+                    "best_play_score_mean": statistics.mean(best) if args.clean_run else None},
         "per_seed": [{
             "seed": i,
-            "games": {g: {"levels": e.levels_completed, "level_count": e.level_count, "score": e.score,
-                          "actions": e.actions, **st} for g, e, st in zip(games, sc.environments, stats)},
+            "games": {g: {"levels": first_play(e).levels_completed, "level_count": e.level_count,
+                          "score": first_play(e).score, "actions": first_play(e).actions,
+                          "level_actions": first_play(e).level_actions, "level_scores": first_play(e).level_scores,
+                          "human_level_actions": first_play(e).level_baseline_actions,
+                          "best_play_score": e.score,
+                          "best_play_levels": max(e.runs, key=lambda r: r.score).levels_completed,
+                          "best_play_level_actions": max(e.runs, key=lambda r: r.score).level_actions,
+                          **st} for g, e, st in zip(games, sc.environments, stats)},
             "skill_usage": dict(agent.usage.most_common()),
             "memory": {"object_types": len(mem.roles), "recipes": len(mem.recipes)} if mem and args.agent == "v1" else None,
         } for i, (sc, agent, mem, stats) in enumerate(runs)],
