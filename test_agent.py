@@ -400,7 +400,7 @@ def test_reset_as_jump():
     world = dict(levels=1, actions=(6,), limit=25, draw=draw, move=move, start=lambda i: frozenset(),
                  won=lambda st: st == {0, 2})
     used = {}
-    for name, off in (("jump", ("deadline", "replay5")), ("plain", ("deadline", "replay5", "reset"))):
+    for name, off in (("jump", ("deadline", "replay5", "cluster")), ("plain", ("deadline", "replay5", "cluster", "reset"))):
         stats = play(lambda: ToyEnv(world), Agent(off=off), 600)
         assert stats["actions_per_level"], (name, stats)
         used[name] = stats["actions_per_level"][0]

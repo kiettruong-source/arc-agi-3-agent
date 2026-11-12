@@ -47,6 +47,10 @@ Official toolkit scorecard (RHAE-style, `arc_agi/scorecard.py`):
 - per level: `min((human_baseline_actions / agent_actions)² × 100, 115)`; 0 if not completed
 - per game: level scores averaged with weight = level index, capped at 100; overall: mean over games
 
+**Two ways of counting (from 2026-11-12):**
+- **First exposure** (main number): the first play of each game; every action from the first frame counts, exploring included. All results before E15 are of this kind.
+- **Best play** (second number, `run.py --clean-run`): after the first play, a *clean run* replays the shortest known solution of every level the agent solved, in a fresh play of the same game. The toolkit's scorecard takes the best play of a game. This number says how short the found solutions are, **not** how efficiently the agent learns, and is never mixed with first-exposure numbers. (Kepler, arXiv 2610.00834, reports the same kind of number with the same caveat.)
+
 Secondary: levels completed, game overs. Exploration metrics (`scripts/info_gathering.py`, 300 actions, identical
 observer for every agent): **useful actions** (frame changed outside the HUD), **new screens** (distinct HUD-masked
 states), **wasted actions** (same state-action repeated), **click coverage** (share of the first frame's object types
@@ -182,6 +186,36 @@ acted on).
 - **Check with a stand-in LLM** (`test_agent.py`): 4 proposals on a fresh "reach" level — one not in the language (dropped), one true from the start (rejected), one already true on a screen visited earlier (rejected), one right (pursued): level won in 26 actions with the LLM goal true on the winning screen; the core alone did not finish this fresh level in 300 actions. The HTTP call is tested against a local stand-in server (request shape, image, failure → no LLM).
 - **Not done:** no run with a real model. Scripts for bwUniCluster (`cluster/setup.sh`, `cluster/eval.sbatch`; model `cyankiwi/Qwen3.6-27B-AWQ-INT4`, about 20 GB, 4-bit, vision) are written but untested: there was no open cluster session.
 
+### E14 — Score accounting: where the points are (2026-11-12)
+- **Question (reverse engineering of the target 0.9):** where does the score come from, and what is the cheapest way to 0.9?
+- **Method:** the scorecard's own per-level actions, level scores and human action counts are saved in the run records; `scripts/score_anatomy.py <run file>` lists the points per level. One point = one unit of a game's 0–100 score; 0.9 overall = 13.5 points over 15 games.
+- **Result (v5 default, seed 0):**
+
+  | game, level | human actions | ours | points now | points at human speed |
+  |---|---|---|---|---|
+  | cd82 L1 | 55 | 223 | 0.29 | 4.76 |
+  | ls20 L1 | 22 | 330 | 0.02 | 3.57 |
+  | sp80 L1 | 39 | 324 | 0.07 | 4.76 |
+  | tn36 L1 | 32 | 45 | 1.81 | 3.57 |
+  | tu93 L1 | 19 | 407 | 0.00 | 2.22 |
+  | vc33 L1 / L2 | 7 / 18 | 38 / 517 | 0.12 / 0.01 | 3.57 / 7.14 |
+  | sum | | | 2.32 → score 0.15 | 29.60 → score 1.97 |
+
+- **Conclusion:** the score is lost in speed, not in levels. The seven levels already solved are worth 1.97 at human speed; 0.9 is 46% of that. The winning attempts themselves are short; the waste is everything before them. So 0.9 needs no new level — only the found solutions without the waste (E15), or found sooner (E16, E17).
+
+### E15 — Clean run: the best-play number (2026-11-12)
+- **Change (commit `ef8464b`):** at each win the agent stores `short` (shortest known route through its screen graph to the winning action, with the screen expected after each step) and `actual` (the attempt that won). `run.py --clean-run` starts a fresh play and replays `short` level by level, checking every step; on a mismatch it resets the level once and replays `actual`. No game-specific code; relies on the games being deterministic.
+- **Result (dev, 3 seeds; run file `runs/2026-11-12-v6-clean-run.json`):**
+
+  | counting | levels per seed | score per seed | score mean ± sd |
+  |---|---|---|---|
+  | first exposure | 7, 7, 6 | 0.15, 0.15, 0.15 | 0.15 ± 0.00 (unchanged) |
+  | **best play** | 7, 7, 6 redone in the clean run | 1.88, 1.91, 1.77 | **1.85 ± 0.07** |
+
+  The clean run needs 79, 77 and 57 extra actions per seed for all 15 games. Replay length vs human count (seed 0): cd82 7 vs 55, sp80 6 vs 39, tn36 7 vs 32, vc33 5 vs 7 and 7 vs 18, ls20 25 vs 22, tu93 22 vs 19.
+- **Conclusion:** the target 0.9 is reached in the best-play number (1.85). The routes the blind search finds are, in five of seven levels, much shorter than the human action counts; the agent's problem is the cost of *finding* them. First exposure is unchanged, as it must be.
+- **Caveat:** best play is not a measure of learning. It is only possible where the same game can be played twice.
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -195,6 +229,7 @@ acted on).
 | random, 3 seeds | 0.11 ± 0.18 | 1.33 ± 0.58 | | | |
 | v5 core (v4 + goal reasoning), 3 seeds | 0.15 ± 0.00 | 6.67 ± 0.58 | | | |
 | v5 with deadline rule + short replay, 3 seeds | 0.13 ± 0.00 | 6.00 ± 0.00 | | | |
+| v5 core + clean run — **best play** (not first exposure), 3 seeds | 1.85 ± 0.07 | 6.67 ± 0.58 | | | |
 
 Rows without ± are single runs made before the reproducibility fix (E9) and carry run-to-run noise of about one level. Held-out split not yet evaluated.
 
@@ -264,4 +299,6 @@ uv run run.py dev --seeds 3 [--agent random]  # E9 baseline (E4-E8 used single r
 uv run python scripts/info_gathering.py      # exploration metrics
 uv run --with scipy python scripts/cluster_objects.py   # E1
 uv run python scripts/win_frame.py           # E10
+uv run run.py dev --seeds 3 --clean-run --label NAME   # E15: first exposure and best play
+uv run python scripts/score_anatomy.py runs/<file>.json   # E14
 ```

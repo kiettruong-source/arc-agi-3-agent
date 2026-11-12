@@ -451,11 +451,18 @@ class Frontier(Skill):
         for (s0, k), s1 in a.exec_edges.items():
             if s1 is not None and s1 != s0:
                 adj.setdefault(s0, []).append((k, s1))
-        goal = a.active_goal()
-        # A reset is a 1-action jump back to the level's start (E10: attempts are short and a reset restores the
-        # level). Offered only after at least one action in this attempt: a reset with none restarts the whole game.
-        if "reset" not in a.off and a.attempt_steps > 0 and a.start_state not in (None, a.state):
+        step = self.search(a, adj)
+        # Dead end: nothing untried can be reached by going on. A reset is then a 1-action jump back to the
+        # level's start. (Offering the jump all the time was worse, protocol E16: the search kept jumping back to
+        # small objects elsewhere instead of trying bigger ones here.) Never with zero actions in the attempt:
+        # such a reset restarts the whole game.
+        if step is None and "reset" not in a.off and a.attempt_steps > 0 and a.start_state not in (None, a.state):
             adj[a.state] = adj.get(a.state, []) + [((RESET, None), a.start_state)]
+            step = self.search(a, adj)
+        return step
+
+    def search(self, a, adj):
+        goal = a.active_goal()
         for p in range(8):  # raise the tier only when nothing of the current tier is reachable
             first, dist, cands = {a.state: None}, {a.state: 0}, []
             q = deque([a.state])
@@ -486,9 +493,10 @@ class Frontier(Skill):
 class Agent:
     """Each step: finish the current skill episode, or pick a new skill (explore first, then best exploit)."""
 
-    # Parts that did not help on the dev games stay off unless asked for (protocol E12): the deadline rule and
-    # short replay each traded one fragile level for another. Goal use is on: neutral on dev, exact in toy worlds.
-    DEFAULT_OFF = ("deadline", "replay5", "reset", "cluster")
+    # Parts that did not help on the dev games stay off unless asked for: the deadline rule and short replay each
+    # traded one fragile level for another (protocol E12); the deliberate reset is being measured (E16).
+    # On: goal use (neutral on dev, exact in toy worlds) and one-test-per-cluster in the graph search (E17).
+    DEFAULT_OFF = ("deadline", "replay5", "reset")
 
     def __init__(self, memory=None, seed=0, off=None):
         self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "reset", "cluster", "llm"
@@ -609,6 +617,10 @@ class Agent:
             if self.goal and "goal" not in self.off:  # carry the goal (not the actions) into the new level
                 self.start_feat = self.feat(self.grid)
                 self.goal_now = translate(self.goal[0], self.goal[1], self.start_feat) or None
+        elif self.attempt_steps == 0:
+            # a fresh attempt shows the level's start again; its id can differ from the first one when the
+            # counter mask has grown since, and the stale id would send route searches into dead screens
+            self.start_state, self.start_grid = self.state, self.grid
         self.seen.setdefault(self.state, self.grid)
         if self.goal_conds and holds(self.goal_conds, self.feat_of(self.state)):
             # the proposed goal is true on this screen and the level did not end: refuted by a counter-example

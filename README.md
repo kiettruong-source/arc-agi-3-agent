@@ -13,6 +13,8 @@ uv sync
 cp .env.example .env          # optional: ARC_API_KEY (an anonymous key is used otherwise)
 uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r reset, q quit
 uv run run.py dev --seeds 3 --label NAME   # evaluate on the dev games; --label saves the result to runs/
+uv run run.py dev --seeds 3 --clean-run    # also replay the found solutions in a fresh play ("best play" number)
+uv run python scripts/score_anatomy.py runs/FILE.json   # where the score points come from
 uv run run.py dev --seeds 3 --agent random   # baseline
 uv run python test_agent.py   # self-check
 uv run python scripts/info_gathering.py   # exploration metrics vs random
@@ -68,6 +70,12 @@ The toolkit's official scorecard (RHAE-style):
 - per level: `min((human_baseline_actions / agent_actions)² × 100, 115)`; 0 if the level is not completed
 - per game: level scores averaged with weight = level index (later levels count more), capped at 100
 - overall: mean over games; also reported: levels completed, actions
+
+Two ways of counting, always reported separately:
+- **first exposure** (main number): the first play of each game, every action counts, exploring included;
+- **best play** (`--clean-run`): after the first play the agent replays the shortest solution it found in a fresh
+  play; the toolkit scores the best play of a game. It shows how short the found solutions are, not how
+  efficiently the agent learns.
 
 Protocol: tune only on the 15 **dev** games; the 10 **held-out** games (`run.py heldout`) are for final
 numbers. Fixed budget of 1000 actions per game, at least 3 seeds, always compared with the random baseline.
