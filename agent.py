@@ -84,6 +84,7 @@ class Memory:
     skill_stats: dict = field(default_factory=dict)  # name -> [value_sum, steps]
     goals: list = field(default_factory=list)    # [(schema, start features of the level it was learned on), ...]
     ops: dict = field(default_factory=dict)      # (action, type | None) -> [summed feature changes, tries]: what an action does
+    act_stats: dict = field(default_factory=dict)  # non-click action -> [times it changed the screen, tries]
 
     def role(self, t):
         return self.roles.setdefault(t, {"tries": 0, "effects": 0, "deaths": 0})
@@ -506,6 +507,7 @@ class Agent:
         self.usage = Counter()
         self.goal_log = []  # one entry per completed level: what was learned, and how well the old goal predicted it
         self.llm_log = []   # one entry per question to the LLM: how many goals it proposed, how many survived the evidence
+        self.pred = Counter()  # measurement: did the agent know beforehand whether its action would change the screen?
         self.new_game()
 
     # ---- bookkeeping
@@ -528,6 +530,7 @@ class Agent:
         self.seen = {}  # state -> grid: every screen of this level where the level did NOT end (free evidence)
         self.start_grid = None
         self.goal_now, self.start_feat, self.fcache, self.feats = None, None, {}, {}  # goal carried into this level
+        self.level_goal = None  # the carried goal as it stood at the level's start (kept for measuring, even if given up)
         self.best_progress, self.since_progress, self.stalled = 0.0, 0, False
         self.attempt_steps, self.budget = 0, None  # actions since the level (re)started; step limit seen at a game over
         self.hyps, self.goal_conds, self.goal_why, self.refuted = [], None, None, []  # proposed goals waiting / in test
@@ -617,6 +620,7 @@ class Agent:
             if self.goal and "goal" not in self.off:  # carry the goal (not the actions) into the new level
                 self.start_feat = self.feat(self.grid)
                 self.goal_now = translate(self.goal[0], self.goal[1], self.start_feat) or None
+                self.level_goal = self.goal_now
         elif self.attempt_steps == 0:
             # a fresh attempt shows the level's start again; its id can differ from the first one when the
             # counter mask has grown since, and the stale id would send route searches into dead screens
@@ -683,6 +687,7 @@ class Agent:
             data = {"x": obj.x, "y": obj.y} if obj else \
                 {"x": self.rng.randrange(self.grid.shape[1]), "y": self.rng.randrange(self.grid.shape[0])}
         self.sent = (act, data)  # exactly what goes to the game (kept for the clean run)
+        self.expected = self.expect(act, obj)
         return act, data
 
     # ---- learn
@@ -694,6 +699,15 @@ class Agent:
         changed = new.shape != self.grid.shape or bool(((self.grid != new) & ~self.hud).any())
         level_up = f_new.levels_completed > f_prev.levels_completed
         died = f_new.state.name == "GAME_OVER"
+        # measurement (modeling): was the prediction made before acting right?
+        guess, basis, _ = self.expected
+        self.pred["actions"] += 1
+        self.pred["changed"] += changed
+        self.pred["no basis" if guess is None else f"{basis} {'right' if guess == changed else 'wrong'}"] += 1
+        if act != CLICK:
+            st = self.mem.act_stats.setdefault(act, [0, 0])
+            st[0] += changed
+            st[1] += 1
         # deadline reasoning (E10): a game over at the step limit is a timeout, nobody's fault. Only a death
         # clearly before a limit already seen is blamed on what was just touched; the first one never is.
         self.attempt_steps += 1
@@ -745,6 +759,8 @@ class Agent:
         gain = 10.0 * level_up + 1.0 * (changed and not died) - 5.0 * blame
         if not died and not level_up:
             s1 = sid(np.where(self.hud, -1, new)) if new.shape == self.hud.shape else None
+            if self.expected[2] is not None:  # the same action on the same screen as before: same result?
+                self.pred["repeat same" if s1 == self.expected[2] else "repeat different"] += 1
             self.edges[(s0, k)] = self.exec_edges[(s0, ek)] = s1
             gain = gain if s1 not in seen else 0.2 * gain
             if s1 is not None:  # operator table: what does this kind of action change? (means-ends analysis)
@@ -768,6 +784,20 @@ class Agent:
             self.new_level()
         elif died:
             self.skill = None  # the attempt restarts; level knowledge (tried, edges) is kept
+
+    def expect(self, act, obj):
+        """Before acting: will this change the screen (counters aside)? From what the agent knows — the same action
+        on this very screen, else how this object type or this action behaved so far.
+        Returns (guess | None, basis, expected next screen | None)."""
+        ek = (CLICK, obj.x, obj.y) if act == CLICK and obj else (act, None)
+        if (self.state, ek) in self.exec_edges:
+            nxt = self.exec_edges[(self.state, ek)]
+            return nxt != self.state, "seen", nxt
+        if act == CLICK:
+            r = self.mem.roles.get(obj.type) if obj else None
+            return (2 * r["effects"] >= r["tries"], "type", None) if r and r["tries"] else (None, None, None)
+        st = self.mem.act_stats.get(act)
+        return (2 * st[0] >= st[1], "action", None) if st and st[1] else (None, None, None)
 
     def active_goal(self):
         return self.goal_now if self.goal_now and not self.stalled else None
@@ -836,7 +866,11 @@ class Agent:
     def learn_goal(self, f_new):
         """At a win: contrast the winning screen (second-to-last frame, E10) with all non-winning screens."""
         entry = {"level": self.level, "screens": len(self.seen), "schema": None, "rank": None,
-                 "llm_goal": self.goal_why, "llm_goal_true_at_win": None, "llm_goals_refuted": len(self.refuted)}
+                 "llm_goal": self.goal_why, "llm_goal_true_at_win": None, "llm_goals_refuted": len(self.refuted),
+                 # goal precision: was there a goal to test on this level, and was it true on the winning screen?
+                 "goal_kind": "llm" if self.goal_conds else "carried" if self.level_goal else None,
+                 "goal_true_at_win": None, "goal_progress_at_win": None,
+                 "goal_given_up": bool(self.level_goal and not self.goal_conds and self.stalled)}
         self.goal_log.append(entry)
         frames = f_new.frame or []
         # the last level has no "next level" frame: its final frame is the winning screen
@@ -847,7 +881,10 @@ class Agent:
         others = [self.feat(g) for g in self.seen.values()]
         start = self.feat(self.start_grid)
         if self.goal_conds:  # was the LLM's goal in test actually true on the winning screen?
-            entry["llm_goal_true_at_win"] = holds(self.goal_conds, win)
+            entry["llm_goal_true_at_win"] = entry["goal_true_at_win"] = holds(self.goal_conds, win)
+        elif self.level_goal:  # the goal carried from the level before: fully reached on the winning screen?
+            entry["goal_progress_at_win"] = progress(win, self.level_goal, start)
+            entry["goal_true_at_win"] = entry["goal_progress_at_win"] >= 0.999
         if self.goal:  # measurement: would the goal learned earlier have picked out this winning screen?
             sch = translate(self.goal[0], self.goal[1], start)
             pw = progress(win, sch, start)

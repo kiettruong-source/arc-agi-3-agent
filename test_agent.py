@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 import numpy as np
 
 from agent import Agent, hud_bands, objects
-from run import clean_run, play  # the real runner code (re-executes once with a fixed hash seed)
+from run import Renamed, clean_run, play  # the real runner code (re-executes once with a fixed hash seed)
 
 
 def frame(grid, levels=0, state="NOT_FINISHED", actions=(6,), before=None):
@@ -384,6 +384,22 @@ def test_clean_run():
     assert clean_run(lambda: ToyEnv(world), agent) == {"levels": 1, "actions": 1 + 1 + 3}
 
 
+def test_measurements():
+    # renaming: the same toy world with colours renamed and the grid mirrored is still solved, clicks mapped back
+    plain = play(lambda: ToyEnv(collect_world(COLLECT)), Agent(), 400)
+    for n in (1, 2, 3):
+        renamed = play(lambda: Renamed(ToyEnv(collect_world(COLLECT)), n), Agent(), 400)
+        assert len(renamed["actions_per_level"]) == 2, (n, renamed)
+    # prediction: after one coin did something, the agent expects the next coin click to change the screen, and is right
+    agent = Agent()
+    play(lambda: ToyEnv(collect_world(COLLECT)), agent, 400)
+    assert agent.pred["type right"] >= 5 and agent.pred["actions"] == sum(plain["actions_per_level"]), agent.pred
+    # goal precision: the goal carried from level 1 ("no coin left") is true on level 2's winning screen
+    won = agent.goal_log[1]
+    assert won["goal_kind"] == "carried" and won["goal_true_at_win"] is True and not won["goal_given_up"], won
+    assert plain["agent_seconds"] >= 0 and plain["played_actions"] == sum(plain["actions_per_level"])
+
+
 def test_reset_as_jump():
     # one-way world: four switches that can only be turned on; the level is won with exactly switches 0 and 2 on.
     # A wrong switch makes the attempt hopeless. Step limit 25. Resetting on purpose beats waiting for the timeout.
@@ -439,6 +455,7 @@ if __name__ == "__main__":
     test_llm_goals_are_checked()
     test_llm_http()
     test_clean_run()
+    test_measurements()
     test_reset_as_jump()
     test_timeout_is_not_deadly()
     test_frontier_exploration()

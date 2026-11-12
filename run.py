@@ -1,12 +1,15 @@
 """Evaluate an agent on ARC-AGI-3 games with the official scorecard metric.
 
-uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,reset,cluster,llm | none] [--clean-run]
+uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,reset,cluster,llm | none] [--clean-run] [--rename N] [--fresh-memory]
 
 --label NAME saves the full result to runs/<date>-NAME.json (the evidence file behind every reported number).
 --clean-run  after the normal play (the "first exposure" numbers), a second play replays the shortest known
              solution of every level the agent solved. The toolkit scores the best play of a game, so this gives a
              second number, "best play": it says how short the found solutions are, not how efficiently the agent
              learns. Both numbers are always reported separately.
+--rename N   robustness test: every game is shown with its colours renamed (permutation number N) and the grid
+             mirrored. Nothing about the game changes; only what it looks like.
+--fresh-memory   transfer test: the agent starts every game with an empty memory (default: memory carried over).
 
 Metric (toolkit scorecard): per level min((human_baseline / actions)^2 * 100, 115), 0 if not completed;
 per game a level-index-weighted mean capped at 100; overall = mean over games.
@@ -22,9 +25,12 @@ import argparse
 import datetime
 import json
 import logging
+import random
 import statistics
 import subprocess
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from dotenv import load_dotenv
 
@@ -43,6 +49,31 @@ HELDOUT = ["bp35", "lf52", "lp85", "m0r0", "r11l", "re86", "sb26", "sc25", "su15
 DEV = ["ar25", "cd82", "cn04", "dc22", "ft09", "g50t", "ka59", "ls20", "s5i5", "sk48", "sp80", "tn36", "tr87", "tu93", "vc33"]
 
 
+class Renamed:
+    """The same game shown differently: colours renamed by a fixed permutation, grid mirrored left-right.
+    Clicks are mapped back. An agent that reasons about structure should play it just as well."""
+
+    def __init__(self, env, n):
+        self.env, self.perm, self.width = env, np.array(random.Random(n).sample(range(16), 16)), None
+
+    def view(self, f):
+        if f is None:
+            return None
+        frames = [np.fliplr(self.perm[np.asarray(g)]) for g in f.frame]
+        if frames:
+            self.width = frames[-1].shape[1]
+        return SimpleNamespace(frame=frames, state=f.state, levels_completed=f.levels_completed,
+                               available_actions=f.available_actions)
+
+    def reset(self):
+        return self.view(self.env.reset())
+
+    def step(self, action, data=None):
+        if data and self.width:
+            data = {**data, "x": self.width - 1 - data["x"]}
+        return self.view(self.env.step(action, data=data))
+
+
 def play(make, agent, budget):
     """One play of one game. `make()` returns an environment (reset / step)."""
     env = make()
@@ -50,6 +81,7 @@ def play(make, agent, budget):
     agent.new_game()
     g0, l0 = len(getattr(agent, "goal_log", [])), len(getattr(agent, "llm_log", []))
     actions = since = game_overs = 0
+    thinking = 0.0  # seconds the agent itself needs (choose + learn), the game's own time excluded
     per_level = []  # actions spent on each completed level (resets included)
     while actions < budget and f is not None:
         if f.state.name == "WIN":
@@ -59,7 +91,9 @@ def play(make, agent, budget):
             f = env.reset()
             agent.on_reset()
         else:
+            t0 = time.perf_counter()
             act, data = agent.choose(f)
+            thinking += time.perf_counter() - t0
             if act == 0:  # the agent asks for a level reset (a 1-action jump back to the level's start)
                 f = env.reset()
                 agent.on_reset()
@@ -69,7 +103,9 @@ def play(make, agent, budget):
             f2 = env.step(GameAction[f"ACTION{act}"], data=data)
             if f2 is None:
                 break
+            t0 = time.perf_counter()
             agent.update(f, f2)
+            thinking += time.perf_counter() - t0
             if f2.levels_completed > f.levels_completed:
                 per_level.append(since + 1)
                 since = -1
@@ -77,7 +113,7 @@ def play(make, agent, budget):
         actions += 1
         since += 1
     return {"actions_per_level": per_level, "game_overs": game_overs, "goals": getattr(agent, "goal_log", [])[g0:],
-            "llm": getattr(agent, "llm_log", [])[l0:]}
+            "llm": getattr(agent, "llm_log", [])[l0:], "agent_seconds": round(thinking, 2), "played_actions": actions}
 
 
 def clean_run(make, agent):
@@ -120,14 +156,16 @@ def first_play(e):
     return next((r for r in e.runs if r.actions), e.runs[0])
 
 
-def run_seed(games, kind, budget, seed, off=None, clean=False):
-    """One full run: fresh scorecard, one analogy memory shared across all games."""
+def run_seed(games, kind, budget, seed, off=None, clean=False, rename=0, fresh=False):
+    """One full run: fresh scorecard, one analogy memory shared across all games (unless `fresh`)."""
     arc = arc_agi.Arcade()
     mem = Memory()
     agent = Agent(mem, seed, off) if kind == "v1" else RandomAgent(seed)
     stats = []
     for g in games:
-        make = lambda g=g: arc.make(g, seed=seed)
+        if fresh and kind == "v1":
+            agent.mem = mem = Memory()  # transfer test: nothing carried over from earlier games
+        make = (lambda g=g: Renamed(arc.make(g, seed=seed), rename)) if rename else (lambda g=g: arc.make(g, seed=seed))
         st = play(make, agent, budget)
         st["clean"] = clean_run(make, agent) if clean and getattr(agent, "solutions", None) else None
         stats.append(st)
@@ -142,6 +180,8 @@ def main():
     ap.add_argument("--seeds", type=int, default=1, help="number of seeds (game + agent), 0..n-1")
     ap.add_argument("--label", help="save the result to runs/<date>-<label>.json")
     ap.add_argument("--clean-run", action="store_true", help="add a second play that replays the found solutions")
+    ap.add_argument("--rename", type=int, default=0, help="show every game with colours renamed (permutation N) and mirrored")
+    ap.add_argument("--fresh-memory", action="store_true", help="empty memory at the start of every game")
     ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, reset, cluster, llm (comma-separated); 'none' = all on; "
                                   "default: the agent's own default (see Agent.DEFAULT_OFF and the protocol)")
     args = ap.parse_args()
@@ -155,7 +195,8 @@ def main():
         games += {"dev": DEV, "heldout": HELDOUT, "all": DEV + HELDOUT}.get(g, [g])
 
     off = None if args.off is None else [x for x in args.off.split(",") if x and x != "none"]
-    runs = [run_seed(games, args.agent, args.budget, seed, off, args.clean_run) for seed in range(args.seeds)]
+    runs = [run_seed(games, args.agent, args.budget, seed, off, args.clean_run, args.rename, args.fresh_memory)
+            for seed in range(args.seeds)]
     seeds = range(args.seeds)
     print(f"\n{'game':6} " + " ".join(f"{'s' + str(i):>9}" for i in seeds) + "   (first exposure: levels / score per seed)")
     for j, g in enumerate(games):
@@ -183,6 +224,22 @@ def main():
     print(f"game overs per seed {[sum(st['game_overs'] for st in stats) for *_, stats in runs]}")
     ranks = [g["rank"] for *_, stats in runs for st in stats for g in st["goals"] if g["rank"] is not None]
     learned = sum(g["schema"] is not None for *_, stats in runs for st in stats for g in st["goals"])
+    secs = sum(st["agent_seconds"] for *_, stats in runs for st in stats)
+    acts = sum(st["played_actions"] for *_, stats in runs for st in stats)
+    print(f"cost: {1000 * secs / max(1, acts):.1f} ms of agent time per action ({secs:.0f} s for {acts} actions); "
+          f"LLM calls {llm.CALLS['asked']}")
+    tested = [g for *_, stats in runs for st in stats for g in st["goals"] if g.get("goal_kind")]
+    print(f"goal precision: {sum(bool(g['goal_true_at_win']) for g in tested)} of {len(tested)} levels won with a goal "
+          f"to test had that goal true on the winning screen (given up before the win: {sum(g['goal_given_up'] for g in tested)})")
+    if args.agent == "v1":
+        pr = sum((a.pred for _, a, *_ in runs), start=type(runs[0][1].pred)())
+        right = sum(n for k, n in pr.items() if k.endswith(" right"))
+        wrong = sum(n for k, n in pr.items() if k.endswith(" wrong"))
+        base = pr["changed"] / max(1, pr["actions"])
+        rep = pr["repeat same"] + pr["repeat different"]
+        print(f"prediction (will the action change the screen?): made for {(right + wrong) / max(1, pr['actions']):.0%} of actions, "
+              f"right {right / max(1, right + wrong):.0%} (always guessing the commoner outcome: {max(base, 1 - base):.0%}); "
+              f"same action on the same screen gave the same screen {pr['repeat same'] / max(1, rep):.0%} of {rep} times")
     print(f"goals learned from wins: {learned}; goal rank (0 best, 0.5 chance): "
           f"{'mean %.2f (n=%d)' % (statistics.mean(ranks), len(ranks)) if ranks else '- (no second level won)'}")
     asks = [a for *_, stats in runs for st in stats for a in st["llm"]]
@@ -207,6 +264,7 @@ def save(args, games, runs, lv, sco, apl, prov, best):
         "label": args.label, "date": datetime.datetime.now().isoformat(timespec="seconds"),
         **prov,
         "command": "run.py " + " ".join(sys.argv[1:]), "agent": args.agent, "budget": args.budget, "games": games,
+        "rename": args.rename, "fresh_memory": args.fresh_memory,
         "llm": {"model": os.environ.get("LLM_MODEL"), **llm.CALLS} if llm.enabled() else None,
         "summary": {"levels_per_seed": lv, "levels_mean": statistics.mean(lv), "levels_sd": sd(lv),
                     "score_per_seed": sco, "score_mean": statistics.mean(sco), "score_sd": sd(sco),
@@ -225,6 +283,7 @@ def save(args, games, runs, lv, sco, apl, prov, best):
                           "best_play_level_actions": max(e.runs, key=lambda r: r.score).level_actions,
                           **st} for g, e, st in zip(games, sc.environments, stats)},
             "skill_usage": dict(agent.usage.most_common()),
+            "prediction": dict(getattr(agent, "pred", {})),
             "memory": {"object_types": len(mem.roles), "recipes": len(mem.recipes)} if mem and args.agent == "v1" else None,
         } for i, (sc, agent, mem, stats) in enumerate(runs)],
     }
