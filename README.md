@@ -11,7 +11,7 @@ information) and **exploiting** (using a fundamental skill or a remembered recip
 uv sync
 cp .env.example .env          # optional: ARC_API_KEY (an anonymous key is used otherwise)
 uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r reset, q quit
-uv run run.py dev --seeds 3   # evaluate the agent on the dev games (levels / score per seed, mean ± sd)
+uv run run.py dev --seeds 3 --label NAME   # evaluate on the dev games; --label saves the result to runs/
 uv run run.py dev --seeds 3 --agent random   # baseline
 uv run python test_agent.py   # self-check
 uv run python scripts/info_gathering.py   # exploration metrics vs random
@@ -58,7 +58,9 @@ Levels completed is the primary comparison number (the squared score is dominate
 
 - `agent.py`: agent, skills, memory · `run.py`: evaluation · `play.py`: play by hand · `test_agent.py`: self-check
 - `scripts/`: exploration analysis (object clustering, object map)
-- `docs/protocol.md`: experiment protocol (setup, metric, experiments E1-E7, decisions, bugs, next steps)
+- `docs/protocol.md`: experiment protocol (setup, metric, experiments, decisions, bugs, tasks)
+- `docs/logbook.md`: project logbook (process journal, every idea, every failure and lesson)
+- `runs/`: saved results of every evaluation (`run.py --label NAME`)
 - `docs/research/`: research notes (landscape, Tycho, Go-Explore, clustering experiments)
 
 Game source files downloaded by the toolkit (`environment_files/`) are not part of this repo and the agent never reads them.

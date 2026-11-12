@@ -3,6 +3,7 @@
 Project: an agent for ARC-AGI-3 interactive games that discovers each game's rules and **goal** through cheap
 exploration, generalises to unseen environments, and is tested by the course instructor on environments not known in
 advance. Background research, sources and design notes: [research/2026-11-04-exploration-notes.md](research/2026-11-04-exploration-notes.md).
+Raw history behind this record (process journal, every idea, every failure): [logbook.md](logbook.md). Evidence files: `runs/`.
 
 ## 1. Research question
 
