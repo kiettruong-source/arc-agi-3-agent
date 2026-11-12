@@ -64,9 +64,9 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    and never trusted: the core rejects what the evidence already contradicts and refutes the rest in play.
    Scripts for a GPU cluster are in `cluster/`.
 
-Current state (15 dev games, `docs/protocol.md`): **first exposure 0.28** in the plain view (7 levels; random baseline
-0.11, 1.33 levels) but only 0.04–0.13 when the same games are shown with renamed colours and mirrored (E18), so a
-fair figure is about 0.15; **best play 1.74–1.97**. The goal reasoning works on toy worlds but has not yet improved the dev-game
+Current state (15 dev games, four views of each: plain and three with renamed colours and mirrored grid;
+`docs/protocol.md` E19): **first exposure 0.28** (0.23–0.43; 7–8 levels; random baseline 0.11, 1.33 levels),
+**best play 2.05** (1.97–2.27). The goal reasoning works on toy worlds but has not yet improved the dev-game
 result (E12, a negative result); the LLM reasoner has not yet been run with a real model (E13).
 
 ## Evaluation metric

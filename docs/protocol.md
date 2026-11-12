@@ -68,7 +68,7 @@ computes the first seven from a run file.
 | 8 | Prediction accuracy | modeling: does the agent know what an action will do? | before each action predict whether the screen will change; share right | 85% right, guess made for 98% of actions (commoner-outcome baseline 62%) — E18 |
 | 9 | Goal precision | goal-setting | share of won levels where the goal in test was true on the winning screen; first hypothesis right (Twin: 87%) | 1 of 1 case, and that goal had been given up before the win — E18 |
 | 10 | Generalization gap | generalization | every metric on held-out minus dev (`agi_metrics.py --vs`) | built; not run (held-out reserved) |
-| 11 | Renaming robustness | generalization | same games with colours permuted and the grid mirrored (`run.py --rename N`); change in levels / score | **not robust:** score 0.28 plain vs 0.04, 0.13, 0.13 renamed; levels 7 vs 6, 7, 6 — E18 |
+| 11 | Renaming robustness | generalization | same games with colours permuted and the grid mirrored (`run.py --rename N`); change in levels / score | E18: not robust (0.28 plain vs 0.04, 0.13, 0.13). After E19: colour-proof (three renamed views identical, 0.23), still mirror-sensitive (plain 0.43) |
 | 12 | Memory ablation | cross-game transfer | memory carried from earlier games vs fresh memory (`run.py --fresh-memory`) | carried 7 levels, fresh 6; same score: no systematic transfer — E18 |
 | 13 | Cost | practicality | agent time per action; LLM calls | 4.4 ms per action; 0 LLM calls — E18 |
 
@@ -265,8 +265,8 @@ acted on).
 - **Conclusion:** kept and on by default. First exposure 0.15 → 0.28 comes almost entirely from one level (tn36); it is one observation, not three (seeds repeat the same run).
 
 ### Where the target stands (2026-11-12)
-- **Best play: 1.97** — the target of 0.9 is reached, with solutions the agent found itself; it is not a measure of learning efficiency.
-- **First exposure: 0.28 in the plain view, but only 0.04–0.13 when the games are shown with renamed colours and mirrored (E18); a fair figure is about 0.15.** By the accounting of E14, 0.9 would need two more first levels found within the human action count: cd82 (55 actions; the agent needs 223, its route is 5) and sp80 (39; the agent needs 245, its route is 4). Their solutions are short; what is missing is knowing what to aim for before the first win — the job of the LLM reasoner (E13, not yet run with a real model).
+- **Best play: 2.05 on average over four views (1.97–2.27)** — the target of 0.9 is reached, with solutions the agent found itself; it is not a measure of learning efficiency.
+- **First exposure: 0.28 on average over four views of the games (0.23–0.43) after E19.** (Before E19: 0.28 in the plain view only, 0.14 on average.) By the accounting of E14, 0.9 would need two more first levels found within the human action count: cd82 (55 actions; the agent needs 223, its route is 5) and sp80 (39; the agent needs 245, its route is 4). Their solutions are short; what is missing is knowing what to aim for before the first win — the job of the LLM reasoner (E13, not yet run with a real model).
 
 ### E18 — New measurements: prediction, goal precision, renaming, memory, cost (2026-11-12)
 - **Built (commit `ee86885`):** the agent predicts before every action whether the screen will change (from the same action on the same screen, else the object type's history, else the action's history) and scores itself; it records whether the goal in test was true on the winning screen; `run.py --rename N` shows every game with colours permuted and the grid mirrored (clicks mapped back); `--fresh-memory` empties the memory before every game; agent time per action is recorded; `scripts/agi_metrics.py --vs` compares runs.
@@ -290,6 +290,20 @@ acted on).
 - **Generalization gap:** the comparison is built (`agi_metrics.py dev.json --vs heldout.json`); not run — the held-out games stay untouched until the user decides.
 - **Conclusion:** the first-exposure gain of E17 (0.15 → 0.28) is **not robust**: it came from an accident of object order. A fair first-exposure figure today is about 0.15 (0.04–0.28 over four views). Renamed views are the better "seeds" for this agent (F31). The measurements themselves work and stay.
 
+### E19 — Object order independent of colour numbers (2026-11-12)
+- **Cause addressed (F37):** inside one size tier the graph search tried objects in the order of their colour numbers, so a renamed game was played differently.
+- **Change (commit `95d5ae9`, switch `order`):** objects are listed top-to-bottom, left-to-right instead of colour by colour; inside a size tier the graph search tries rare kinds of object first (few twins on the screen), then small ones.
+- **Result (dev, seed 0, four views: plain, renamed 1, 2, 3; run files `v6-order`, `v6-order-rename1/2/3`):**
+
+  | | before (E18) | after |
+  |---|---|---|
+  | levels (first exposure) | 7, 6, 7, 6 — mean 6.50 | 8, 7, 7, 7 — mean **7.25** |
+  | score (first exposure) | 0.28, 0.04, 0.13, 0.13 — mean 0.14 | 0.43, 0.23, 0.23, 0.23 — mean **0.28** |
+  | score (best play) | 1.97, 1.74, 1.92, 1.74 — mean 1.84 | 2.27, 1.97, 1.97, 1.97 — mean **2.05** |
+
+  tn36's first level is now won in all four views (35 actions, human 32). The three colour-renamed views give identical results: the agent no longer depends on colour numbers. The plain view still differs from the mirrored ones (ls20 level 1: 35 vs 368 actions; tu93: a second level in the plain view only) — the left-to-right order of objects is not mirror-proof. Plain view, more metrics: 5 of 8 solved levels within 5× the human count (before 2 of 7), discovery cost 13 actions per route step (before 28). Exploration metrics (300 actions): useful 59%, new screens 1,249, wasted 23%, coverage 74% — unchanged.
+- **Conclusion:** kept, on by default. The fair first-exposure figure is now **0.28 (0.23–0.43 over four views)**, twice the 0.14 before, and it no longer hangs on colour numbers. One seed per view; mirror sensitivity remains.
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -306,6 +320,9 @@ acted on).
 | v5 core + clean run — **best play** (not first exposure), 3 seeds | 1.85 ± 0.07 | 6.67 ± 0.58 | | | |
 | **v6 default** (cluster rule in the graph search), first exposure, 3 seeds | 0.28 ± 0.00 | 7.00 ± 0.00 | 1294 | 23% | 74% |
 | v6 default — **best play** (not first exposure), 3 seeds | 1.97 ± 0.00 | 7.00 ± 0.00 | | | |
+| v6 default, four views (plain + 3 renamed), first exposure, mean (range) | 0.14 (0.04–0.28) | 6.50 (6–7) | | | |
+| **v6 + colour-independent object order**, four views, first exposure, mean (range) | **0.28 (0.23–0.43)** | **7.25 (7–8)** | 1249 | 23% | 74% |
+| v6 + colour-independent object order — **best play** (not first exposure), four views | 2.05 (1.97–2.27) | 7.25 (7–8) | | | |
 
 Rows without ± are single runs made before the reproducibility fix (E9) and carry run-to-run noise of about one level. Held-out split not yet evaluated.
 
@@ -325,7 +342,8 @@ Rows without ± are single runs made before the reproducibility fix (E9) and car
 | The reasoning must be general: one loop for every game and question, no hand-written goal types | user (2026-11-12) | unseen environments |
 | Hybrid: a local LLM on bwUniCluster reasons, the core checks and plays alone without a GPU | user (2026-11-12) | best published solutions get their reasoning from an LLM (research notes §14) |
 | LLM answers are data (conditions over generic features), never executed code, and always checked against the evidence | Claude (accepted with the plan) | safety; the check is what the core contributes |
-| A new part becomes default only if it helps on the dev games; otherwise it stays a documented switch | joint (plan of 2026-11-12) | E12: deadline rule and short replay off by default, goal reasoning on; E16: reset jump off; E17: cluster rule on |
+| A new part becomes default only if it helps on the dev games; otherwise it stays a documented switch | joint (plan of 2026-11-12) | E12: deadline rule and short replay off by default, goal reasoning on; E16: reset jump off; E17: cluster rule on; E19: colour-independent order on |
+| Results are judged over several views of the games (plain + renamed), not over seeds | Claude (2026-11-12, after E18) | seeds repeat the same run; renamed views exposed that a gain was an accident |
 | Target: official score about 0.9 on the 0–100 scale, only the bwUniCluster open model as LLM | user (2026-11-12) | reverse-engineered in E14 |
 | Report two numbers, never mixed: first exposure (main) and best play (with a clean run) | user (2026-11-12) | the toolkit scores the best play; the report must say which number is which |
 
