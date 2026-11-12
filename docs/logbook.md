@@ -58,6 +58,10 @@ still logged and committed as a negative result. No number enters the protocol o
 9. Steps 4–5, code only (E13): `llm.py` (call to any OpenAI-compatible endpoint), goal hypotheses as checked conditions, one fixed prompt, cluster scripts (`cluster/`), tests with a stand-in LLM and a stand-in server. **Not run with a real model:** there was no open session to bwUniCluster (F29). Model chosen: `cyankiwi/Qwen3.6-27B-AWQ-INT4`.
 9b. Exploration metrics after these changes (`scripts/info_gathering.py`, default agent): useful actions 59% (v4 60%), new screens 1,261 (1,287), wasted 27% (26%), click coverage 72% (64%) — essentially unchanged.
 10. Generality check of the reasoning code: no game ids and no colour constants in `agent.py` / `llm.py`; the only action number is 6, the interface's "click at x, y" action (plus 1–4 as a fallback list when a game reports no actions). Toy worlds of two kinds (click "collect", movement "reach") run through the same code; colours renamed and grid mirrored give identical action counts.
+12. **New target from the user:** an official score of about 0.9 on the 0–100 scale (today 0.15), with only the bwUniCluster open model as LLM, found by reasoning backward from the goal. For reference, read how the systems near 90–100 of 100 work (research notes §15): all use a newest-generation frontier model as a coding agent — excluded by the user's choice of engine.
+13. Backward accounting of the score (E14): the seven levels already solved would be worth 1.97 at human speed; they give 0.15 because the agent needs 5–20× more actions than a human. 0.9 needs no new level, only the found solutions without the waste, or found sooner.
+14. **Decision (user): report both** — *first exposure* (every action from the first frame; main number) and *best play* (with a clean run that replays the found solutions; the toolkit scores the best play of a game).
+15. E15: clean run built and measured (see protocol).
 11. Commits today: `c73cb40` run records · `c94ebb6` logbook · `ae3644d` probe · `b509e7d` E10 + baselines · `2603e0f` step 2 · `b4c08d6` step 3 · step 4–5 code and ablations (see git log).
 
 ---
@@ -107,6 +111,11 @@ Status: **kept** (in the agent / method) · **testing** · **proposed** (not bui
 | I38 | 11-12 | Claude | Richer feature language: positions, shapes, "region A looks like region B" | proposed | reason: E12 — real goals are not expressible with counts and distances |
 | I39 | 11-12 | Claude | Re-evaluate the skills regularly; today the graph search, once started, never hands back to `go_to` or `probe` within a level | proposed | reason: F28 |
 | I40 | 11-12 | Claude | Carry a goal to a different game by mapping colours through their rarity rank | parked | `translate()` exists; switched on only within a game |
+| I41 | 11-12 | user / Claude | Reverse-engineer the target: account for where every score point comes from, then work back to what is needed | kept | E14: the score is lost in speed, not in levels |
+| I42 | 11-12 | Claude / paper (Kepler) | **Clean run:** after exploring, replay the shortest known solution of each solved level in a fresh play; report it separately as "best play" | testing | E15 |
+| I43 | 11-12 | Claude | **Reset as a 1-action jump** back to the level's start, used on purpose by the graph search instead of walking on until the timeout | proposed | plan step 3 (E16) |
+| I44 | 11-12 | paper (Twin) | Generic goal signals as candidates (a colour disappears, a new colour appears, a local burst, a large change); plan inside a learned copy of the game | parked | needs a transition model the core does not have |
+| I45 | 11-12 | paper (Twin, Kepler) | A newest-generation frontier model as coding agent that writes and tests a code copy of each game | rejected | user's decision: only the bwUniCluster open model; no result near 90 of 100 exists without such a model |
 | I37 | 11-12 | paper / Claude | Read all animation frames of an action, not only the last (Kepler: they carry task information) | proposed | E10: cd82, sp80, tn36, ls20 return 6–28 frames per action |
 
 ---

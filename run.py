@@ -1,6 +1,6 @@
 """Evaluate an agent on ARC-AGI-3 games with the official scorecard metric.
 
-uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,llm | none] [--clean-run]
+uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,reset,cluster,llm | none] [--clean-run]
 
 --label NAME saves the full result to runs/<date>-NAME.json (the evidence file behind every reported number).
 --clean-run  after the normal play (the "first exposure" numbers), a second play replays the shortest known
@@ -60,6 +60,12 @@ def play(make, agent, budget):
             agent.on_reset()
         else:
             act, data = agent.choose(f)
+            if act == 0:  # the agent asks for a level reset (a 1-action jump back to the level's start)
+                f = env.reset()
+                agent.on_reset()
+                actions += 1
+                since += 1
+                continue
             f2 = env.step(GameAction[f"ACTION{act}"], data=data)
             if f2 is None:
                 break
@@ -136,8 +142,8 @@ def main():
     ap.add_argument("--seeds", type=int, default=1, help="number of seeds (game + agent), 0..n-1")
     ap.add_argument("--label", help="save the result to runs/<date>-<label>.json")
     ap.add_argument("--clean-run", action="store_true", help="add a second play that replays the found solutions")
-    ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, llm (comma-separated); 'none' = all on; "
-                                  "default: the agent's own default (deadline and replay5 off, see protocol E12)")
+    ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, reset, cluster, llm (comma-separated); 'none' = all on; "
+                                  "default: the agent's own default (see Agent.DEFAULT_OFF and the protocol)")
     args = ap.parse_args()
 
     git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()

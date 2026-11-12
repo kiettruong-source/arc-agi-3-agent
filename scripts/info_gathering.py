@@ -34,6 +34,8 @@ def measure(game, agent):
         objs = objects(g, hud)
         s = sid(np.where(hud, -1, g)); seen.add(s)
         act, data = agent.choose(f)
+        if act == 0:  # deliberate level reset
+            f = env.reset(); agent.on_reset(); g = np.array(f.frame[-1]); continue
         o = hit(objs, data["x"], data["y"]) if data else None
         k = (act, o.type if o else None)
         redundant += (s, k) in tried; tried.add((s, k))

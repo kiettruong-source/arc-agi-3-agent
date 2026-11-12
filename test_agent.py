@@ -305,19 +305,20 @@ class ToyEnv:
     won(state) -> bool)."""
 
     def __init__(self, world):
-        self.w, self.level, self.state = world, 0, None
+        self.w, self.level, self.state, self.n = world, 0, None, 0
 
     def show(self, **kw):
         return frame(self.w["draw"](self.state), actions=self.w["actions"], **kw)
 
     def reset(self):
-        self.state = self.w["start"](self.level)   # restarts the current level
+        self.state, self.n = self.w["start"](self.level), 0   # restarts the current level
         return self.show(levels=self.level)
 
     def step(self, action, data=None):
-        self.state = self.w["move"](self.state, int(action.name[-1]), data)
-        if not self.w["won"](self.state):
-            return self.show(levels=self.level)
+        self.state, self.n = self.w["move"](self.state, int(action.name[-1]), data), self.n + 1
+        if not self.w["won"](self.state):  # optional step limit per attempt, as in the real games
+            dead = self.n >= self.w.get("limit", 10 ** 9)
+            return self.show(levels=self.level, state="GAME_OVER" if dead else "NOT_FINISHED")
         won, self.level = self.w["draw"](self.state), self.level + 1
         if self.level == self.w["levels"]:
             return frame(won, levels=self.level, state="WIN", actions=self.w["actions"])
@@ -383,6 +384,30 @@ def test_clean_run():
     assert clean_run(lambda: ToyEnv(world), agent) == {"levels": 1, "actions": 1 + 1 + 3}
 
 
+def test_reset_as_jump():
+    # one-way world: four switches that can only be turned on; the level is won with exactly switches 0 and 2 on.
+    # A wrong switch makes the attempt hopeless. Step limit 25. Resetting on purpose beats waiting for the timeout.
+    def draw(st):
+        g = np.zeros((16, 16), int)
+        for i in range(4):
+            g[12:14, 1 + 4 * i:3 + 4 * i] = 6
+            g[3, 2 + 4 * i] = 2 if i in st else 9
+        return g
+
+    def move(st, act, d):
+        i = (d["x"] - 1) // 4
+        return st | {i} if 12 <= d["y"] <= 13 and 0 <= i < 4 and d["x"] <= 2 + 4 * i else st
+    world = dict(levels=1, actions=(6,), limit=25, draw=draw, move=move, start=lambda i: frozenset(),
+                 won=lambda st: st == {0, 2})
+    used = {}
+    for name, off in (("jump", ("deadline", "replay5")), ("plain", ("deadline", "replay5", "reset"))):
+        stats = play(lambda: ToyEnv(world), Agent(off=off), 600)
+        assert stats["actions_per_level"], (name, stats)
+        used[name] = stats["actions_per_level"][0]
+    assert used["jump"] < used["plain"], used
+    return used
+
+
 def test_timeout_is_not_deadly():
     # a click world with a step limit of 10 and no way to win: no object may end up "deadly"
     def run(agent):
@@ -414,6 +439,7 @@ if __name__ == "__main__":
     test_llm_goals_are_checked()
     test_llm_http()
     test_clean_run()
+    test_reset_as_jump()
     test_timeout_is_not_deadly()
     test_frontier_exploration()
     test_structure_mapping()

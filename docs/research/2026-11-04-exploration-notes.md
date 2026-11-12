@@ -297,6 +297,30 @@ class); (3) go_to tries all reachable targets, floor from whole path; (4) budget
 - Yi-Chia Chen's Kaggle write-up could not be read with the tools available; method unknown.
 - Model chosen for our hybrid: `cyankiwi/Qwen3.6-27B-AWQ-INT4` (Apache-2.0, about 20 GB, vision, vLLM >= 0.19) — fits an A100 40 GB by size; not yet tested there.
 
+## 15. How the systems near the top work (read 2026-11-12, for the reverse engineering of our target)
+
+**Twin (arXiv 2608.14490), 93.3 / 100, GPT 5.6 Sol through a coding agent.**
+- The agent writes a "twin" of the game: `step(grid, action) -> grid` and `goal_reached(grid) -> bool`.
+- Gate: no scored action while the twin fails to reproduce any logged transition. A wrong prediction during play stops the plan and becomes a counter-example for repair.
+- Planning: breadth-first search inside the twin (depth 8, 20,000 nodes; for goal search depth 14, 30,000 nodes).
+- Goal before any reward: the search looks for states showing one of five generic signals (a colour disappears, a new colour appears, a compact local burst of changes, a large global change, the search frontier); the agent turns the best candidate into a predicate; the predicate must be false on every logged frame; then it is tested by executing the cheapest plan to it. First hypothesis right on 156 of 179 completed levels (87.2%).
+- Action budget: 92.9% of 11,614 scored actions execute plans already tested in the twin; 7.1% are probes.
+- Cost: 2.60 billion tokens, 91.4 hours for 25 games. Same model without the harness: 61.1; direct play: 7.8.
+
+**Kepler (arXiv 2610.00834), 100 (Claude Opus 5 through Claude Code), 95.97 (GPT-5.6 Sol).**
+- Tools: observe, query, backtest (replay the model over the recorded history), bfs (plan inside the model), commit (the only channel to the game; predicts each step and voids the plan on a mismatch).
+- Scores come from a **final mechanical replay** ("clean run", program length capped at 1.3× the human count) after development on the public games — explicitly *not* first exposure. An internal stage with first-attempt discipline dropped the composite from 97.78 to 94.01.
+
+**"Do coding agents need executable world models…" (arXiv 2607.15439).** Mean score by model generation and variant:
+gpt-5.4 high 34–39, gpt-5.4 xhigh 41–54, gpt-5.5 high 51–66, gpt-5.5 xhigh 70–75, gpt-5.6-sol 92–99. Even the plain
+"textual" agent (shell + notes file, no simulator) reaches 92–96 with the newest model. Model capability matters more than the harness.
+
+**Consequences for us.** A score near 90 of 100 has only been shown with newest-generation frontier models as coding
+agents (excluded by the user's decision: only the bwUniCluster open model). What transfers without such a model:
+(1) the clean-run idea (replay the found solution; report it separately from first exposure); (2) Twin's goal filter
+"a goal predicate must be false on every logged frame" — the same rule our core already applies; (3) Twin's generic
+goal signals as candidates.
+
 ## Sources
 
 - ARC-AGI Community Leaderboard — https://arcprize.org/leaderboard/community

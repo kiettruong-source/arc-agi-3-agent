@@ -16,6 +16,7 @@ import llm
 
 MOVES = (1, 2, 3, 4)
 CLICK = 6
+RESET = 0  # restart the current level: costs one action, like any other
 
 
 def sid(arr):
@@ -431,7 +432,19 @@ class Frontier(Skill):
     name, kind = "frontier", "explore"
 
     def untested(self, a, s, p):
-        return [(k, typ) for t, k, typ in a.keys_at.get(s, []) if t <= p and (s, k) not in a.tried_exec]
+        """Untried actions on screen s up to tier p. One test per cluster: when one member of an object type has
+        been clicked on this screen and the type has never done anything, its twins wait until everything else
+        has been tried (tier + 4). A type that ever had an effect keeps all its members in play."""
+        out = []
+        for t, k, typ in a.keys_at.get(s, []):
+            if (s, k) in a.tried_exec:
+                continue
+            if (typ is not None and "cluster" not in a.off and (s, (CLICK, typ)) in a.tried
+                    and not a.mem.roles.get(typ, {}).get("effects")):
+                t += 4
+            if t <= p:
+                out.append((k, typ))
+        return out
 
     def next(self, a):
         adj = {}
@@ -439,7 +452,11 @@ class Frontier(Skill):
             if s1 is not None and s1 != s0:
                 adj.setdefault(s0, []).append((k, s1))
         goal = a.active_goal()
-        for p in range(4):  # raise the tier only when nothing of the current tier is reachable
+        # A reset is a 1-action jump back to the level's start (E10: attempts are short and a reset restores the
+        # level). Offered only after at least one action in this attempt: a reset with none restarts the whole game.
+        if "reset" not in a.off and a.attempt_steps > 0 and a.start_state not in (None, a.state):
+            adj[a.state] = adj.get(a.state, []) + [((RESET, None), a.start_state)]
+        for p in range(8):  # raise the tier only when nothing of the current tier is reachable
             first, dist, cands = {a.state: None}, {a.state: 0}, []
             q = deque([a.state])
             while q:  # every reachable screen that still has an untried action
@@ -471,10 +488,10 @@ class Agent:
 
     # Parts that did not help on the dev games stay off unless asked for (protocol E12): the deadline rule and
     # short replay each traded one fragile level for another. Goal use is on: neutral on dev, exact in toy worlds.
-    DEFAULT_OFF = ("deadline", "replay5")
+    DEFAULT_OFF = ("deadline", "replay5", "reset", "cluster")
 
     def __init__(self, memory=None, seed=0, off=None):
-        self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "llm"
+        self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "reset", "cluster", "llm"
         self.mem = memory or Memory()
         self.rng = random.Random(seed)
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]

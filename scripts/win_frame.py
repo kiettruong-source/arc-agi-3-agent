@@ -39,6 +39,10 @@ for game in games:
             agent.on_reset()
             continue
         act, data = agent.choose(f)
+        if act == 0:  # deliberate level reset
+            f = env.reset()
+            agent.on_reset()
+            continue
         f2 = env.step(GameAction[f"ACTION{act}"], data=data)
         if f2 is None:
             break
