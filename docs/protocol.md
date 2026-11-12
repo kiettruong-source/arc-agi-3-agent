@@ -151,6 +151,37 @@ acted on).
 ### Run files for the baseline (2026-11-12)
 `runs/2026-11-12-v4-baseline.json`, `runs/2026-11-12-random-baseline.json` (commit `c73cb40`, 3 seeds): identical to E9 — v4 7, 7, 6 levels (6.67 ± 0.58), random 1, 2, 1 (1.33 ± 0.58). New numbers from the records: median actions per completed level v4 324 (n = 20), random 279 (n = 4).
 
+### E11 — A goal from the winning screen, measurement only (2026-11-12)
+- **Question:** does contrasting the winning screen with every non-winning screen of the level give a goal (I24), and does the goal learned on level k pick out the winning screen of level k+1?
+- **Method:** generic situation features (per colour and size class: number of objects, cells, distance to the controlled thing; totals of objects, shapes, colours, colours occurring once). Goal schema = features whose value on the win screen was never seen before in the level (weight 2) or differs from the level's start (weight 1). **Goal rank** = share of non-winning screens of level k+1 that the level-k goal scores at least as high as the real winning screen (0 = best, 0.5 = chance). No behaviour change. Run file `runs/2026-11-12-v5-step2-goal-measure.json` (commit `2603e0f`).
+- **Result:** behaviour identical to v4 (7, 7, 6 levels). A schema was learned at 20 of 20 level-ups. Goal rank could only be measured where a second level was won — vc33 level 2, the same case in all 3 seeds: **0.23** (n = 3). Learned goals (seed 0, strongest features): ls20 "count colour 9 down, distance to colour 9 up, cells colour 3 up" (never seen before); sp80 "count colour 11 to 0" (never seen before); tn36 "types down, objects down, count colour 11 down"; vc33 "cells colour 0 up"; cd82 only weak features (nothing never-seen).
+- **Toy check:** "collect" world (click coins until none is left): learned "count of the coin colour to 0 (never seen before)", distractors not in the goal, goal rank 0.0.
+- **Conclusion:** the contrast works and finds the right goal where the goal is expressible (toy world). On the real games the evidence is one case, and most learned goals are coarse (cell and object counts).
+
+### E12 — Using the goal; deadline rule; short replay (2026-11-12)
+- **Change (commit `b4c08d6`):** (a) *goal*: the goal learned at a win is carried to the next level and pursued first — `go_to` walks to the goal's colours; the graph search is best-first (progress toward the goal minus walking cost) and orders actions by their known effect (operator table = means-ends analysis); given up when progress stalls for half an attempt. (b) *deadline*: a game over at the step limit is a timeout — no "deadly" role, no wall, no skill penalty. (c) *replay5*: replay only recipes of at most 5 actions. Each part can be switched off (`--off`).
+- **Result (dev, 3 seeds, 1,000 actions):**
+
+  | variant | run file (`runs/2026-11-12-…`) | levels per seed | levels mean ± sd | score | median actions per completed level |
+  |---|---|---|---|---|---|
+  | v4 baseline | `v4-baseline` | 7, 7, 6 | 6.67 ± 0.58 | 0.15 | 324 (n = 20) |
+  | all three on | `v5-step3` | 6, 6, 6 | 6.00 ± 0.00 | 0.13 | 218.5 (n = 18) |
+  | deadline + replay5 (goal off) | `v5-step3-off-goal` | 6, 6, 6 | 6.00 ± 0.00 | 0.13 | 218.5 (n = 18) |
+  | all three off (control) | `v5-all-off` | 7, 7, 6 | 6.67 ± 0.58 | 0.15 | 324 (n = 20) |
+  | only goal | `v5-only-goal` | 7, 7, 6 | 6.67 ± 0.58 | 0.15 | 324 (n = 20) |
+  | only deadline | `v5-only-deadline` | 6, 6, 6 | 6.00 ± 0.00 | 0.15 | 277 (n = 18) |
+  | only replay5 | `v5-only-replay5` | 6, 6, 6 | 6.00 ± 0.00 | 0.13 | 218.5 (n = 18) |
+
+  With all three off the new code reproduces v4 exactly (same levels, same skill usage). Per game: the deadline rule alone loses sp80's first level (3 of 3 seeds) and wins tu93's in 3 of 3 (v4: 2 of 3); short replay alone loses tu93's level and changes speeds (sp80 score 0.07 → 0.16, tn36 1.81 → 1.35). The seeds are almost identical runs (games and agent are nearly deterministic), so each of these is **one** observation of a fragile level, not three.
+- **Diagnosis on second levels** (cd82, ls20, sp80, tn36, vc33, seed 0): the carried goal is pursued for 30–141 actions, then given up. Best progress reached: cd82 0.83, ls20 0.18, sp80 0.00, tn36 0.33, vc33 level 2 **1.00 without the level ending**, level 3 0.55.
+- **Toy worlds** (`test_agent.py`): "reach" world, level 2 with nearer distractors: 16 actions with the goal (the shortest route) vs 18 without; "collect" world: 5 vs 5 (plain exploring is already minimal there); colours renamed and grid mirrored: identical action counts.
+- **Conclusion:** **negative result on the dev games.** Using the learned goal changes neither levels nor score: the goals learned from real wins are too coarse to guide (vc33: fully "reached" without a win) or cannot be advanced inside one attempt (sp80). The mechanism itself works where the goal is expressible (toy worlds). This is the limit foreseen in the plan: the feature language cannot say what these games want — the reason for the LLM reasoner (E13) and for richer features. **Decision:** by the rule "kept only if it helps", the default agent is v4 + goal reasoning (`v5-only-goal`, 6.67 ± 0.58 levels); the deadline rule and short replay stay available as switches but are off by default, although E10 shows the deadline rule is factually right — its effect on levels is one fragile level each way.
+
+### E13 — LLM goal proposer: mechanics only, no real model yet (2026-11-12)
+- **Change (commit `e60cd17`):** `llm.py` — one call to any OpenAI-compatible endpoint (unset or failing → the core plays alone), the screen as an image, one fixed prompt for every game built from the agent's measured facts. The LLM answers with goals as **conditions over the generic features** (data, not code). The core drops proposals outside the language, rejects those already true on a non-winning screen, pursues the rest in order, and refutes one in play when it becomes true without the level ending. Asked when the agent has looked around (12 actions) and has no goal to pursue, at most twice per level.
+- **Check with a stand-in LLM** (`test_agent.py`): 4 proposals on a fresh "reach" level — one not in the language (dropped), one true from the start (rejected), one already true on a screen visited earlier (rejected), one right (pursued): level won in 26 actions with the LLM goal true on the winning screen; the core alone did not finish this fresh level in 300 actions. The HTTP call is tested against a local stand-in server (request shape, image, failure → no LLM).
+- **Not done:** no run with a real model. Scripts for bwUniCluster (`cluster/setup.sh`, `cluster/eval.sbatch`; model `cyankiwi/Qwen3.6-27B-AWQ-INT4`, about 20 GB, 4-bit, vision) are written but untested: there was no open cluster session.
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -162,6 +193,8 @@ acted on).
 | v4 | 0.15 | 7 | 1287 | 26% | 64% |
 | v4, 3 seeds | 0.15 ± 0.00 | 6.67 ± 0.58 | | | |
 | random, 3 seeds | 0.11 ± 0.18 | 1.33 ± 0.58 | | | |
+| v5 core (v4 + goal reasoning), 3 seeds | 0.15 ± 0.00 | 6.67 ± 0.58 | | | |
+| v5 with deadline rule + short replay, 3 seeds | 0.13 ± 0.00 | 6.00 ± 0.00 | | | |
 
 Rows without ± are single runs made before the reproducibility fix (E9) and carry run-to-run noise of about one level. Held-out split not yet evaluated.
 
@@ -177,6 +210,11 @@ Rows without ± are single runs made before the reproducibility fix (E9) and car
 | Movement: build a mental map first, then plan the route | user | greedy movement got stuck (E4) |
 | Analogy between levels / games by structure mapping (relations over surface) | user | colours and positions change between levels |
 | LLM adviser later, optional; core runs without it | user | instructor's machine may have no GPU / network; LLM tunes settings, not every action |
+| Everything is logged for the report: process, every idea, every failure, a run file behind each number | user (2026-11-12) | the report must be written from the record |
+| The reasoning must be general: one loop for every game and question, no hand-written goal types | user (2026-11-12) | unseen environments |
+| Hybrid: a local LLM on bwUniCluster reasons, the core checks and plays alone without a GPU | user (2026-11-12) | best published solutions get their reasoning from an LLM (research notes §14) |
+| LLM answers are data (conditions over generic features), never executed code, and always checked against the evidence | Claude (accepted with the plan) | safety; the check is what the core contributes |
+| A new part becomes default only if it helps on the dev games; otherwise it stays a documented switch | joint (plan of 2026-11-12) | E12: deadline rule and short replay off by default, goal reasoning on |
 
 ## 6. Bugs found and fixed
 

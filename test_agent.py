@@ -257,6 +257,47 @@ def test_llm_goals_are_checked():
     return used, blind, asked, won
 
 
+def test_llm_http():
+    # ask() against a stand-in OpenAI-compatible server: request shape, image, answer extraction, failure -> None
+    import json
+    import os
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    import llm
+    got = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            got["path"] = self.path
+            got["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            out = json.dumps({"choices": [{"message": {"content": 'Sure: {"goals": []}'}}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    old = {k: os.environ.get(k) for k in ("LLM_BASE_URL", "LLM_MODEL", "LLM_EXTRA")}
+    try:
+        os.environ.update(LLM_BASE_URL=f"http://127.0.0.1:{server.server_port}/v1", LLM_MODEL="stand-in", LLM_EXTRA='{"top_k": 20}')
+        text = llm.ask("what is the goal?", llm.render(np.zeros((8, 8), int)))
+        assert llm.parse_json(text) == {"goals": []}, text
+        content = got["body"]["messages"][0]["content"]
+        assert got["path"] == "/v1/chat/completions" and got["body"]["model"] == "stand-in" and got["body"]["top_k"] == 20
+        assert content[0]["image_url"]["url"].startswith("data:image/png;base64,") and content[1]["text"] == "what is the goal?"
+        server.shutdown()
+        assert llm.ask("server is gone", timeout=2) is None          # failure is silent: the core plays on
+    finally:
+        for k, v in old.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
 def test_timeout_is_not_deadly():
     # a click world with a step limit of 10 and no way to win: no object may end up "deadly"
     def run(agent):
@@ -278,14 +319,15 @@ def test_timeout_is_not_deadly():
                 g2 = g
             f = frame(g2)
         return sum(r["deaths"] for r in agent.mem.roles.values())
-    assert run(Agent()) == 0
-    assert run(Agent(off={"deadline"})) > 0   # the old rule blamed whatever was clicked last
+    assert run(Agent(off=())) == 0            # deadline rule on (a switch; off by default, protocol E12)
+    assert run(Agent(off={"deadline"})) > 0   # the old rule blames whatever was clicked last
 
 
 if __name__ == "__main__":
     test_goal_from_win()
     test_general_reasoning()
     test_llm_goals_are_checked()
+    test_llm_http()
     test_timeout_is_not_deadly()
     test_frontier_exploration()
     test_structure_mapping()

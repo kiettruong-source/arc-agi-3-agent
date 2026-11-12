@@ -1,0 +1,789 @@
+{
+ "label": "v5-only-deadline",
+ "date": "2026-11-12T17:38:05",
+ "commit": "e60cd17",
+ "uncommitted_code_changes": false,
+ "command": "run.py dev --seeds 3 --label v5-only-deadline --off goal,replay5",
+ "agent": "v1",
+ "budget": 1000,
+ "games": [
+  "ar25",
+  "cd82",
+  "cn04",
+  "dc22",
+  "ft09",
+  "g50t",
+  "ka59",
+  "ls20",
+  "s5i5",
+  "sk48",
+  "sp80",
+  "tn36",
+  "tr87",
+  "tu93",
+  "vc33"
+ ],
+ "summary": {
+  "levels_per_seed": [
+   6,
+   6,
+   6
+  ],
+  "levels_mean": 6,
+  "levels_sd": 0.0,
+  "score_per_seed": [
+   0.14986663686131063,
+   0.1497896881436014,
+   0.1497896881436014
+  ],
+  "score_mean": 0.14981533771617114,
+  "score_sd": 4.442636288321396e-05,
+  "actions_per_level_median": 277.0
+ },
+ "per_seed": [
+  {
+   "seed": 0,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "cd82": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.28966522360718905,
+     "actions": 1000,
+     "actions_per_level": [
+      223
+     ],
+     "game_overs": 9,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 45,
+       "schema": [
+        "types down",
+        "count colour 15 up",
+        "objects up",
+        "cells colour 0 down"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ft09": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 1,
+     "goals": []
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9,
+     "goals": []
+    },
+    "ls20": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 0.015777251289888085,
+     "actions": 1000,
+     "actions_per_level": [
+      331
+     ],
+     "game_overs": 10,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 93,
+       "schema": [
+        "cells colour 3 up (never seen before)",
+        "count colour 9 down (never seen before)",
+        "cells colour 5 down (never seen before)",
+        "dist colour 9 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19,
+     "goals": []
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 4,
+     "goals": []
+    },
+    "sp80": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 32,
+     "goals": []
+    },
+    "tn36": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 1.8059964726631395,
+     "actions": 1000,
+     "actions_per_level": [
+      45
+     ],
+     "game_overs": 15,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 7,
+       "schema": [
+        "cells colour 4 up (never seen before)",
+        "types down (never seen before)",
+        "count size 0 down (never seen before)",
+        "objects down (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "tu93": {
+     "levels": 1,
+     "level_count": 9,
+     "score": 0.006401594546763558,
+     "actions": 1000,
+     "actions_per_level": [
+      354
+     ],
+     "game_overs": 28,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 60,
+       "schema": [
+        "count colour 14 to 0 (never seen before)",
+        "count colour 0 up (never seen before)",
+        "types down (never seen before)",
+        "cells colour 14 to 0 (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "vc33": {
+     "levels": 2,
+     "level_count": 7,
+     "score": 0.1301590108126793,
+     "actions": 1000,
+     "actions_per_level": [
+      38,
+      508
+     ],
+     "game_overs": 14,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 8,
+       "schema": [
+        "cells colour 0 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      },
+      {
+       "level": 1,
+       "screens": 65,
+       "schema": [
+        "cells colour 0 up"
+       ],
+       "rank": 0.23076923076923078,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    }
+   },
+   "skill_usage": {
+    "frontier": 10020,
+    "replay": 1731,
+    "probe": 1216,
+    "go_to": 841,
+    "repeat": 408,
+    "explore_map": 403,
+    "random": 141,
+    "click_all": 52
+   },
+   "memory": {
+    "object_types": 331,
+    "recipes": 6
+   }
+  },
+  {
+   "seed": 1,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "cd82": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.28966522360718905,
+     "actions": 1000,
+     "actions_per_level": [
+      223
+     ],
+     "game_overs": 9,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 45,
+       "schema": [
+        "types down",
+        "count colour 15 up",
+        "objects up",
+        "cells colour 0 down"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ft09": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 1,
+     "goals": []
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9,
+     "goals": []
+    },
+    "ls20": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 0.015777251289888085,
+     "actions": 1000,
+     "actions_per_level": [
+      331
+     ],
+     "game_overs": 10,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 93,
+       "schema": [
+        "cells colour 3 up (never seen before)",
+        "count colour 9 down (never seen before)",
+        "cells colour 5 down (never seen before)",
+        "dist colour 9 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19,
+     "goals": []
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 4,
+     "goals": []
+    },
+    "sp80": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 32,
+     "goals": []
+    },
+    "tn36": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 1.8059964726631395,
+     "actions": 1000,
+     "actions_per_level": [
+      45
+     ],
+     "game_overs": 15,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 7,
+       "schema": [
+        "cells colour 4 up (never seen before)",
+        "types down (never seen before)",
+        "count size 0 down (never seen before)",
+        "objects down (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "tu93": {
+     "levels": 1,
+     "level_count": 9,
+     "score": 0.005247363781125333,
+     "actions": 1000,
+     "actions_per_level": [
+      391
+     ],
+     "game_overs": 28,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 61,
+       "schema": [
+        "count colour 14 to 0 (never seen before)",
+        "count colour 0 up (never seen before)",
+        "types down (never seen before)",
+        "cells colour 14 to 0 (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "vc33": {
+     "levels": 2,
+     "level_count": 7,
+     "score": 0.1301590108126793,
+     "actions": 1000,
+     "actions_per_level": [
+      38,
+      508
+     ],
+     "game_overs": 14,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 8,
+       "schema": [
+        "cells colour 0 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      },
+      {
+       "level": 1,
+       "screens": 65,
+       "schema": [
+        "cells colour 0 up"
+       ],
+       "rank": 0.23076923076923078,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    }
+   },
+   "skill_usage": {
+    "frontier": 10035,
+    "replay": 1695,
+    "probe": 1216,
+    "go_to": 841,
+    "repeat": 436,
+    "explore_map": 413,
+    "random": 124,
+    "click_all": 52
+   },
+   "memory": {
+    "object_types": 331,
+    "recipes": 6
+   }
+  },
+  {
+   "seed": 2,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "cd82": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.28966522360718905,
+     "actions": 1000,
+     "actions_per_level": [
+      223
+     ],
+     "game_overs": 9,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 45,
+       "schema": [
+        "types down",
+        "count colour 15 up",
+        "objects up",
+        "cells colour 0 down"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13,
+     "goals": []
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ft09": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 1,
+     "goals": []
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9,
+     "goals": []
+    },
+    "ls20": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 0.015777251289888085,
+     "actions": 1000,
+     "actions_per_level": [
+      331
+     ],
+     "game_overs": 10,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 93,
+       "schema": [
+        "cells colour 3 up (never seen before)",
+        "count colour 9 down (never seen before)",
+        "cells colour 5 down (never seen before)",
+        "dist colour 9 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19,
+     "goals": []
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 4,
+     "goals": []
+    },
+    "sp80": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 32,
+     "goals": []
+    },
+    "tn36": {
+     "levels": 1,
+     "level_count": 7,
+     "score": 1.8059964726631395,
+     "actions": 1000,
+     "actions_per_level": [
+      45
+     ],
+     "game_overs": 15,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 7,
+       "schema": [
+        "cells colour 4 up (never seen before)",
+        "types down (never seen before)",
+        "count size 0 down (never seen before)",
+        "objects down (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7,
+     "goals": []
+    },
+    "tu93": {
+     "levels": 1,
+     "level_count": 9,
+     "score": 0.005247363781125333,
+     "actions": 1000,
+     "actions_per_level": [
+      391
+     ],
+     "game_overs": 28,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 61,
+       "schema": [
+        "count colour 14 to 0 (never seen before)",
+        "count colour 0 up (never seen before)",
+        "types down (never seen before)",
+        "cells colour 14 to 0 (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    },
+    "vc33": {
+     "levels": 2,
+     "level_count": 7,
+     "score": 0.1301590108126793,
+     "actions": 1000,
+     "actions_per_level": [
+      38,
+      508
+     ],
+     "game_overs": 14,
+     "goals": [
+      {
+       "level": 0,
+       "screens": 8,
+       "schema": [
+        "cells colour 0 up (never seen before)"
+       ],
+       "rank": null,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      },
+      {
+       "level": 1,
+       "screens": 65,
+       "schema": [
+        "cells colour 0 up"
+       ],
+       "rank": 0.23076923076923078,
+       "llm_goal": null,
+       "llm_goal_true_at_win": null,
+       "llm_goals_refuted": 0
+      }
+     ]
+    }
+   },
+   "skill_usage": {
+    "frontier": 9977,
+    "replay": 1695,
+    "probe": 1216,
+    "go_to": 841,
+    "repeat": 425,
+    "explore_map": 409,
+    "random": 197,
+    "click_all": 52
+   },
+   "memory": {
+    "object_types": 331,
+    "recipes": 6
+   }
+  }
+ ]
+}

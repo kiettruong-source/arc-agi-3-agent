@@ -2,8 +2,9 @@
 
 A minimal agent for [ARC-AGI-3](https://arcprize.org/) interactive games (university project, WS 26/27).
 It discovers each game's rules and goal by **cheap exploration**, groups what it sees into **object types**,
-keeps an **analogy memory** of what each type did, and switches between **exploring** (gathering
-information) and **exploiting** (using a fundamental skill or a remembered recipe).
+keeps an **analogy memory** of what each type did, switches between **exploring** (gathering
+information) and **exploiting**, and **reasons backward from the goal**: it learns what the end of a level
+looks like from the winning screen and, optionally, lets a local LLM propose goals that the core then checks.
 
 ## Setup
 
@@ -41,6 +42,24 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    winning recipes (shortest known path), per-skill value. Recipes store each target's **relational description**
    (odd one out, how many alike, relative size, side of the player) and are mapped onto new levels by
    **structure mapping**: relations weigh more than colour / shape.
+6. **Goal reasoning, backward from the end** — one general loop: *event → contrast → hypothesis → test → revise*.
+   - Evidence: every screen where the level did not end is a free counter-example; the **winning screen**
+     (the engine sends it just before the next level) is the positive example.
+   - A goal is whatever distinguishes the winning screen, described with generic features (per colour / size
+     class: how many objects, how many cells, distance to the controlled thing; plus totals). No goal types are
+     written by hand.
+   - The goal — not the action sequence — is carried to the next level and pursued first: the search becomes
+     best-first, actions are ordered by their known effect (means-ends analysis), `go_to` walks to the goal's
+     colours. It is dropped when it stops making progress.
+   - Switches, off by default because they did not help on the dev games (E12): treat a game over at the step
+     limit as a timeout instead of a deadly object (`deadline`); replay only short recipes (`replay5`).
+7. **Optional LLM reasoner** (`llm.py`, off unless `LLM_BASE_URL` is set): a local vision model proposes goal
+   hypotheses *before the first win*, as conditions over the same generic features. They are data, not code,
+   and never trusted: the core rejects what the evidence already contradicts and refutes the rest in play.
+   Scripts for a GPU cluster are in `cluster/`.
+
+Current state (dev games, 3 seeds): see `docs/protocol.md`. The goal reasoning works on toy worlds but has not
+yet improved the dev-game result (E12, a negative result); the LLM reasoner has not yet been run with a real model (E13).
 
 ## Evaluation metric
 
@@ -56,8 +75,9 @@ Levels completed is the primary comparison number (the squared score is dominate
 
 ## Repo layout
 
-- `agent.py`: agent, skills, memory · `run.py`: evaluation · `play.py`: play by hand · `test_agent.py`: self-check
-- `scripts/`: exploration analysis (object clustering, object map)
+- `agent.py`: agent, skills, memory, goal reasoning · `llm.py`: optional LLM reasoner · `run.py`: evaluation · `play.py`: play by hand · `test_agent.py`: self-check
+- `cluster/`: setup and job script for running the LLM reasoner on a GPU cluster (untested)
+- `scripts/`: analysis scripts (object clustering, object map, exploration metrics, win-frame probe)
 - `docs/protocol.md`: experiment protocol (setup, metric, experiments, decisions, bugs, tasks)
 - `docs/logbook.md`: project logbook (process journal, every idea, every failure and lesson)
 - `runs/`: saved results of every evaluation (`run.py --label NAME`)

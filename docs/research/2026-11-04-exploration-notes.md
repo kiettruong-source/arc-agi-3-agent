@@ -281,6 +281,22 @@ Summary: good at basic information (object effects, controls, walkable space), w
 the original research question. Fix order: (1) explicit goal-hypothesis space; (2) looser type key (colour + size
 class); (3) go_to tries all reachable targets, floor from whole path; (4) budget-aware switch to exploit.
 
+## 14. Comparison with the current best solutions (researched 2026-11-12)
+
+| solution | how it reasons | needs | result |
+|---|---|---|---|
+| Kepler (arXiv 2610.00834) | hypotheses as executable world models; retrospective transition checks and conditional prediction checks | Claude Opus 5 (about $778 and 858M tokens for the 25 games) | 100.00 RHAE on the 25 public games; no held-out result |
+| Tycho (arXiv 2607.28287) | actor + builder; Python world model verified by replay | Opus 4.8 / Opus 5 / GPT-5.6 Sol | 88.49 (Opus 4.8), 100 (later models), public games |
+| Twin (arXiv 2608.14490) | coding agent writes a world model that must reproduce every observed transition before any action is allowed | a frontier coding agent | 93.3 / 100; 179 of 183 levels; goal inferred before any reward on 87.2% of cleared levels; "the goal is the harder problem" |
+| NVIDIA OO Agents (arXiv 2607.20709) | world-model + memory fleet | GPT-5.5, two-hour cap | 50.2% RHAE |
+| Kaggle leaders (ARC Prize 2026, offline, small open models) | Tufa Labs "Duck": Qwen 3.6 27B (FP8) writes and runs Python in a live REPL; Milestone 2 top three all used the Duck harness with Qwen3.8-Flash-Next | one GPU, no internet | leaderboard snapshots disagree: 75.56 / 70.24 / 60.95 (Yi-Chia Chen, Tufa Labs, NVARC3) in one, 55.89 / 48.59 in another; verified results due 4 Dec 2026 |
+| ours, v4 | hand-written heuristics + graph search, no LLM | laptop CPU | 0.15 / 100; 6.67 of 104 dev levels |
+
+- The gap is the reasoning engine (an LLM forms, checks and uses a model of rules and goal).
+- Kepler reports evaluation pitfalls (source-code leakage, harness reconstruction, self-repair masking a broken planner) and that animation frames carry task information missing from the settled grid.
+- Yi-Chia Chen's Kaggle write-up could not be read with the tools available; method unknown.
+- Model chosen for our hybrid: `cyankiwi/Qwen3.6-27B-AWQ-INT4` (Apache-2.0, about 20 GB, vision, vLLM >= 0.19) — fits an A100 40 GB by size; not yet tested there.
+
 ## Sources
 
 - ARC-AGI Community Leaderboard — https://arcprize.org/leaderboard/community
@@ -295,3 +311,9 @@ class); (3) go_to tries all reachable targets, floor from whole path; (4) budget
 - Go-Explore — https://arxiv.org/pdf/1901.10995 ; First return, then explore — https://arxiv.org/pdf/2004.12919
 - ARC-AGI-3 benchmark paper — https://arxiv.org/abs/2603.24621
 - StochasticGoose background — https://untitledlife.github.io/summerslog/posts/2026-03-26-the-game-i-cannot-play.html
+- Kepler — https://arxiv.org/abs/2610.00834
+- Twin — https://arxiv.org/abs/2608.14490
+- NVIDIA-labs OO Agents — https://arxiv.org/pdf/2607.20709
+- Kaggle ARC Prize 2026 ARC-AGI-3 leaderboard / discussions — https://www.kaggle.com/competitions/arc-prize-2026-arc-agi-3/leaderboard
+- "ARC-AGI-3 Kaggle Scores Surge as Harnesses Take Over" — https://www.metirai.com/blog/arc-agi-3-kaggle-scores-surge-harnesses-arc-prize-2026
+- Qwen3.6-27B AWQ-INT4 model card — https://huggingface.co/cyankiwi/Qwen3.6-27B-AWQ-INT4

@@ -469,8 +469,12 @@ class Frontier(Skill):
 class Agent:
     """Each step: finish the current skill episode, or pick a new skill (explore first, then best exploit)."""
 
-    def __init__(self, memory=None, seed=0, off=()):
-        self.off = set(off)  # ablation switches: "goal", "deadline", "replay5"
+    # Parts that did not help on the dev games stay off unless asked for (protocol E12): the deadline rule and
+    # short replay each traded one fragile level for another. Goal use is on: neutral on dev, exact in toy worlds.
+    DEFAULT_OFF = ("deadline", "replay5")
+
+    def __init__(self, memory=None, seed=0, off=None):
+        self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "llm"
         self.mem = memory or Memory()
         self.rng = random.Random(seed)
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
