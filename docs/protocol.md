@@ -139,6 +139,18 @@ acted on).
   v4 levels by game (all seeds): cd82 1, ls20 1, sp80 1, tn36 1, vc33 2; tu93 1 in 2 of 3 seeds.
 - **Conclusion:** v4 beats random by ~5 levels, far outside the seed spread. The score is fragile: random's seed 1 completed sp80 quickly once (4.76) and nearly matched v4's mean score, so **levels are the primary comparison number** and the score is reported alongside. The games are almost deterministic under the seed (only tu93 varied).
 
+### E10 — Which returned frame shows the won / lost level? (2026-11-12)
+- **Question:** does the agent already receive the winning screen (idea I24)? Reading the engine (`arcengine/base_game.py`) suggested yes.
+- **Method:** `uv run python scripts/win_frame.py` — v4 on cd82, ls20, sp80, tn36, vc33, 600 actions each; at every level-up and game over: number of frames the action returned and each frame's difference to the screen before the action.
+- **Result:**
+  - 6 level-ups: each returned ≥ 2 frames (2, 2, 2, 10, 16, 20). The **last frame is the next level** (10–71% of cells differ); the **frame before it still shows the old level in its winning state** (1–17% differ).
+  - 41 game overs: the final screen differs 0–4% from the one before. They come at fixed intervals per level — cd82 ~100 actions, ls20 132 (level 2: 66–67), sp80 31 (level 2: 40–46), tn36 62, vc33 ~51 — i.e. they are consistent with **step-limit timeouts**, not deadly objects (one irregular interval in sp80).
+  - Several games return many animation frames per action (cd82 15, sp80 22–28, tn36 6, ls20 6); the agent reads only the last one.
+- **Conclusion:** (1) the win screen is available as `frame[-2]` at a level-up — a free positive example of the goal. (2) The agent's assumption that `frame[-1]` at a level-up is the new level holds in all cases seen. (3) Every attempt has a fixed budget of about 31–132 actions and a reset restores the level, so **a level must be solved inside one attempt**; game overs are a clock, not mistakes (random and v4 both show ~180 game overs per 15,000 actions, run files below). (4) Where the agent marked an object type "deadly", it was almost certainly a timeout (logbook F16).
+
+### Run files for the baseline (2026-11-12)
+`runs/2026-11-12-v4-baseline.json`, `runs/2026-11-12-random-baseline.json` (commit `c73cb40`, 3 seeds): identical to E9 — v4 7, 7, 6 levels (6.67 ± 0.58), random 1, 2, 1 (1.33 ± 0.58). New numbers from the records: median actions per completed level v4 324 (n = 20), random 279 (n = 4).
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -213,4 +225,5 @@ uv run python test_agent.py                  # self-checks
 uv run run.py dev --seeds 3 [--agent random]  # E9 baseline (E4-E8 used single runs)
 uv run python scripts/info_gathering.py      # exploration metrics
 uv run --with scipy python scripts/cluster_objects.py   # E1
+uv run python scripts/win_frame.py           # E10
 ```

@@ -51,7 +51,8 @@ still logged and committed as a negative result. No number enters the protocol o
 2. User requirements: everything must be logged for the report (I30 → this logbook); the reasoning must be general (I31).
 3. User asked whether the current best solutions are better than ours. Researched: yes, by far (protocol-style table in the plan; sources in the research notes). Ours: 0.15 / 100; Kaggle leaders ~55–75; frontier-LLM harnesses ~93–100 on the public games.
 4. **Decision (user): hybrid** — a local LLM on bwUniCluster reasons, our core supplies evidence and checks, and plays alone without a GPU (I32).
-5. Plan for v5 approved. Step 0 done: this logbook, `run.py --label` (commit `c73cb40`), baselines re-run as run files.
+5. Plan for v5 approved. Step 0 done: this logbook, `run.py --label` (commit `c73cb40`), baselines re-run as run files (`runs/2026-11-12-v4-baseline.json`, `…-random-baseline.json`); they reproduce E9 exactly (7, 7, 6 and 1, 2, 1 levels).
+6. Step 1 done (E10): the winning screen is the second-to-last frame at every level-up seen; all game overs seen are step-limit timeouts at fixed intervals (31–132 actions per attempt). New understanding: a level must be solved inside one attempt, so game overs are a clock, not mistakes.
 
 ---
 
@@ -84,11 +85,11 @@ Status: **kept** (in the agent / method) · **testing** · **proposed** (not bui
 | I21 | 11-08 | Claude | Explicit goal-hypothesis space built from hand-written goal templates × roles | changed | hand-written templates dropped for a general contrast loop (I24, I31) |
 | I22 | 11-08 | paper | Graph exploration: screens as nodes, shortest path to the nearest untried action | kept | E8: 3 → 7 dev levels; random actions 8,290 → 95 |
 | I23 | 11-08 | Claude | Several seeds; levels as the primary number | kept | E9 |
-| I24 | 11-12 | Claude | **Win snapshot:** what is true only on the winning screen = the goal | testing | plan steps 1–2 |
+| I24 | 11-12 | Claude | **Win snapshot:** what is true only on the winning screen = the goal | testing | E10: win screen is received as `frame[-2]` in 6 of 6 level-ups; plan step 2 |
 | I25 | 11-12 | Claude | **"Not yet" evidence:** every non-winning screen is a free counter-example; look for new situations, not new screens | proposed | plan steps 2, later |
 | I26 | 11-12 | Claude | **Means-ends analysis:** learn what each action type changes; pick the action that shrinks the difference to the goal | proposed | plan step 3 |
 | I27 | 11-12 | Claude | **Transfer goals, not actions** to the next level | proposed | plan step 3; answer to F10 |
-| I28 | 11-12 | Claude | **Deadline reasoning:** learn the step limit from deaths; timeout ≠ deadly object | proposed | plan steps 3, 7; answer to F15, F16 |
+| I28 | 11-12 | Claude | **Deadline reasoning:** learn the step limit from deaths; timeout ≠ deadly object | proposed | E10: attempts last a fixed 31–132 actions; plan steps 3, 7; answer to F15, F16 |
 | I29 | 11-12 | Claude | **Imagination:** predict an action's effect, search in the head, act only to test | parked | biggest effort; after the numbers of steps 2–6 |
 | I30 | 11-12 | user | Log everything — ideas, failures, process — for the report | kept | this logbook, run records |
 | I31 | 11-12 | user | The reasoning must be general | kept | one loop (event → contrast → hypothesis → test) for every game and question; plan Part B |
@@ -97,6 +98,7 @@ Status: **kept** (in the agent / method) · **testing** · **proposed** (not bui
 | I34 | 11-12 | paper | Reference run of the open "Duck" harness with the same model | parked | plan step 7 |
 | I35 | 11-08 | Claude | Looser object identity (colour + size class) for shape-changing objects | proposed | answer to F13; task T3 |
 | I36 | 11-04 | Claude | Small local web page to play the local environment in the browser | parked | offered, not needed so far |
+| I37 | 11-12 | paper / Claude | Read all animation frames of an action, not only the last (Kepler: they carry task information) | proposed | E10: cd82, sp80, tn36, ls20 return 6–28 frames per action |
 
 ---
 
@@ -118,13 +120,14 @@ Status: **kept** (in the agent / method) · **testing** · **proposed** (not bui
 | F12 | 11-08 | comparing versions with single runs | same v4 code gave 7 and 6 levels | Python's `hash()` is randomised per process (screen ids) | stable ids + fixed hash seed; 3 seeds (E9) | make runs reproducible before comparing anything; E4–E8 carry ~1 level of noise |
 | F13 | 11-08 | object type = colour + exact shape | sk48: 896–987 probes on 154 "types"; tr87: 46 types | objects that change shape look new every time | open (I35) | exact matching is too strict for some games |
 | F14 | 11-08 | `repeat` skill (v3) | ar25: 754 of 1,000 actions on `repeat` | it restarts on the same action with no memory | not fixed on purpose; in v4 it is no longer dominant (35 actions) | — |
-| F15 | 11-08 | playing without regard to the step limit | 1–26 game overs per game; each costs the progress made | the counter is seen but not treated as time left | open (I28) | — |
-| F16 | 11-12 | role "deadly" = the type clicked just before a game over | a timeout marks an innocent type deadly, which is then avoided | found by reading the code; effect not yet measured | open → plan step 3 | check what a rule does in the case it was not written for |
+| F15 | 11-08 | playing without regard to the step limit | 1–26 game overs per game; each costs the progress made | the counter is seen but not treated as time left; E10: they are timeouts at fixed intervals, and random has as many (~180 per run) as v4 | open (I28) | game overs are a clock: the question is what gets done inside one attempt |
+| F16 | 11-12 | role "deadly" = the type clicked just before a game over | a timeout marks an innocent type deadly, which is then avoided | found by reading the code; E10: every game over seen was a timeout; effect on levels not yet measured | open → plan step 3 | check what a rule does in the case it was not written for |
 | F17 | 11-08 | keeping run outputs only in a temporary folder | result files of E1–E9 cannot be shown; the numbers survive in the protocol | no saving step in the runner | `run.py --label` + `runs/` (2026-11-12); baselines re-run | evidence must be saved by the tool, not by hand |
 | F18 | 11-08 | scoring by the official score alone | random's seed 1 scored 4.76 on one fast sp80 level and nearly matched v4's mean score | squared efficiency term | levels as the primary number, score alongside | — |
 | F19 | 11-08 | v4 on the dev games | 9 of 15 games never complete a level (ar25, cn04, dc22, ft09, g50t, ka59, s5i5, sk48, tr87); 38–499 actions per completed level | exhaustive search without a goal | open → v5 | search finds levels; only understanding finds them cheaply |
 | F20 | 11-08 | v4 on tu93 | 494 random actions; level 1 solved in only 2 of 3 seeds | graph found nothing reachable left (dead end) | open | — |
 | F21 | 11-12 | reading the Kaggle first-place write-up | page could not be read by the tools | page needs a browser session | method recorded as unknown | state gaps in the comparison openly |
 | F22 | 11-04 – 11-12 | small slips | macOS has no `timeout` command; a cluster command with a `<placeholder>` was run literally; a GPU test job was stopped with Ctrl+C and looked "FAILED"; the work e-mail was in `pyproject.toml` (caught before publishing); an AI co-author line was in the first commit (removed on request); experiment E8 was first placed above E7; a README line described replay the old way | — | each fixed when noticed | give copy-paste commands without placeholders; scan for personal data before publishing |
+| F23 | 11-12 | run record flag "uncommitted changes" | the v4 baseline record says `true` although the code was identical to commit `c73cb40` | the flag also counted uncommitted documents | flag now checks code files only (`uncommitted_code_changes`) | a provenance flag must mean exactly one thing |
 
 Open questions: Which goals do the games have (task R1)? Does the win-snapshot contrast predict the next level's win (goal rank)? How much does a ~27B local model add over the core alone?

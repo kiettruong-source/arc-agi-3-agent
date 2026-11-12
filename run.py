@@ -119,7 +119,7 @@ def save(args, games, runs, lv, sco, apl):
     sd = lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0
     record = {
         "label": args.label, "date": datetime.datetime.now().isoformat(timespec="seconds"),
-        "commit": git("rev-parse", "--short", "HEAD"), "uncommitted_changes": bool(git("status", "--porcelain")),
+        "commit": git("rev-parse", "--short", "HEAD"), "uncommitted_code_changes": bool(git("status", "--porcelain", "--", "*.py")),
         "command": "run.py " + " ".join(sys.argv[1:]), "agent": args.agent, "budget": args.budget, "games": games,
         "summary": {"levels_per_seed": lv, "levels_mean": statistics.mean(lv), "levels_sd": sd(lv),
                     "score_per_seed": sco, "score_mean": statistics.mean(sco), "score_sd": sd(sco),

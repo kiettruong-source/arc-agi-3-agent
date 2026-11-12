@@ -1,0 +1,440 @@
+{
+ "label": "random-baseline",
+ "date": "2026-11-12T17:16:46",
+ "commit": "c73cb40",
+ "uncommitted_changes": false,
+ "command": "run.py dev --agent random --seeds 3 --label random-baseline",
+ "agent": "random",
+ "budget": 1000,
+ "games": [
+  "ar25",
+  "cd82",
+  "cn04",
+  "dc22",
+  "ft09",
+  "g50t",
+  "ka59",
+  "ls20",
+  "s5i5",
+  "sk48",
+  "sp80",
+  "tn36",
+  "tr87",
+  "tu93",
+  "vc33"
+ ],
+ "summary": {
+  "levels_per_seed": [
+   1,
+   2,
+   1
+  ],
+  "levels_mean": 1.3333333333333333,
+  "levels_sd": 0.5773502691896257,
+  "score_per_seed": [
+   0.004152502497029978,
+   0.3223352365027821,
+   0.010254138819196477
+  ],
+  "score_mean": 0.11224729260633619,
+  "score_sd": 0.18196707289899772,
+  "actions_per_level_median": 279.0
+ },
+ "per_seed": [
+  {
+   "seed": 0,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 10
+    },
+    "cd82": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ft09": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 2
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "ls20": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 3
+    },
+    "sp80": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.06228753745544966,
+     "actions": 1000,
+     "actions_per_level": [
+      341
+     ],
+     "game_overs": 33
+    },
+    "tn36": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 16
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "tu93": {
+     "levels": 0,
+     "level_count": 9,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "vc33": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    }
+   },
+   "skill_usage": {
+    "random": 14820
+   },
+   "memory": null
+  },
+  {
+   "seed": 1,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 10
+    },
+    "cd82": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ft09": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.07312378563696986,
+     "actions": 1000,
+     "actions_per_level": [
+      347
+     ],
+     "game_overs": 2
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "ls20": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 3
+    },
+    "sp80": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 4.761904761904762,
+     "actions": 1000,
+     "actions_per_level": [
+      23
+     ],
+     "game_overs": 33
+    },
+    "tn36": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 16
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "tu93": {
+     "levels": 0,
+     "level_count": 9,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "vc33": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    }
+   },
+   "skill_usage": {
+    "random": 14820
+   },
+   "memory": null
+  },
+  {
+   "seed": 2,
+   "games": {
+    "ar25": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 10
+    },
+    "cd82": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "cn04": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 13
+    },
+    "dc22": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ft09": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 2
+    },
+    "g50t": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "ka59": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 9
+    },
+    "ls20": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "s5i5": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "sk48": {
+     "levels": 0,
+     "level_count": 8,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 3
+    },
+    "sp80": {
+     "levels": 1,
+     "level_count": 6,
+     "score": 0.15381208228794715,
+     "actions": 1000,
+     "actions_per_level": [
+      217
+     ],
+     "game_overs": 33
+    },
+    "tn36": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 16
+    },
+    "tr87": {
+     "levels": 0,
+     "level_count": 6,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 7
+    },
+    "tu93": {
+     "levels": 0,
+     "level_count": 9,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    },
+    "vc33": {
+     "levels": 0,
+     "level_count": 7,
+     "score": 0.0,
+     "actions": 1000,
+     "actions_per_level": [],
+     "game_overs": 19
+    }
+   },
+   "skill_usage": {
+    "random": 14820
+   },
+   "memory": null
+  }
+ ]
+}
