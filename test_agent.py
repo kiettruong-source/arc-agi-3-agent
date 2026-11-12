@@ -7,8 +7,10 @@ import numpy as np
 from agent import Agent, hud_bands, objects
 
 
-def frame(grid, levels=0, state="NOT_FINISHED", actions=(6,)):
-    return NS(frame=[grid.tolist()], levels_completed=levels, state=NS(name=state), available_actions=list(actions))
+def frame(grid, levels=0, state="NOT_FINISHED", actions=(6,), before=None):
+    """`before` = the winning screen of the level just completed (the engine sends it ahead of the new level)."""
+    frames = ([before.tolist()] if before is not None else []) + [grid.tolist()]
+    return NS(frame=frames, levels_completed=levels, state=NS(name=state), available_actions=list(actions))
 
 
 def test_perception():
@@ -120,7 +122,55 @@ def test_frontier_exploration():
     assert "frontier" in agent.usage and "random" not in agent.usage, agent.usage
 
 
+def collect_game(agent, levels, max_steps=80):
+    """Toy "collect" world: clicking a coin (colour 4) removes it; a level ends when no coin is left.
+    Distractors (colour 7) never matter. Returns the number of actions used per level."""
+    def scene(coins, junk):
+        g = np.zeros((16, 16), int)
+        for y, x in coins:
+            g[y, x] = 4
+        for y, x in junk:
+            g[y:y + 2, x:x + 2] = 7
+        return g
+    used, lvl = [0] * len(levels), 0
+    coins, junk = list(levels[0][0]), levels[0][1]
+    f = frame(scene(coins, junk))
+    for _ in range(max_steps):
+        act, data = agent.choose(f)
+        used[lvl] += 1
+        if (data["y"], data["x"]) in coins:
+            coins.remove((data["y"], data["x"]))
+        if coins:
+            f2 = frame(scene(coins, junk), levels=lvl)
+        else:
+            won, lvl = scene(coins, junk), lvl + 1
+            if lvl == len(levels):
+                agent.update(f, frame(won, levels=lvl, state="WIN"))
+                break
+            coins, junk = list(levels[lvl][0]), levels[lvl][1]
+            f2 = frame(scene(coins, junk), levels=lvl, before=won)
+        agent.update(f, f2)
+        f = f2
+    return used
+
+
+COLLECT = [([(2, 2), (2, 8), (9, 4)], [(12, 10)]),
+           ([(1, 1), (1, 6), (5, 12), (9, 3), (13, 8)], [(11, 12), (6, 6)])]
+
+
+def test_goal_from_win():
+    agent = Agent()
+    collect_game(agent, COLLECT)
+    assert len(agent.goal_log) == 2, agent.goal_log
+    schema = agent.mem.goals[0][0]
+    d, to_zero, mag, weight = schema[("count", "colour", 4)]
+    assert (d, to_zero, weight) == (-1, True, 2), schema          # "no coin left" was never seen before the win
+    assert ("count", "colour", 7) not in schema, schema            # distractors are not part of the goal
+    assert agent.goal_log[1]["rank"] == 0.0, agent.goal_log        # level 1's goal picks out level 2's win screen
+
+
 if __name__ == "__main__":
+    test_goal_from_win()
     test_frontier_exploration()
     test_structure_mapping()
     test_perception()

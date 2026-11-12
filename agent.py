@@ -79,6 +79,7 @@ class Memory:
     roles: dict = field(default_factory=dict)    # type -> {"tries", "effects", "deaths"}
     recipes: list = field(default_factory=list)  # [[(action, target description | None), ...], ...]
     skill_stats: dict = field(default_factory=dict)  # name -> [value_sum, steps]
+    goals: list = field(default_factory=list)    # [(schema, start features of the level it was learned on), ...]
 
     def role(self, t):
         return self.roles.setdefault(t, {"tries": 0, "effects": 0, "deaths": 0})
@@ -124,6 +125,99 @@ def best_match(desc, objs, player_box=None, used=(), threshold=0.5):
     scored = [(similarity(desc, describe(o, objs, player_box)), o) for o in objs if (o.x, o.y) not in used]
     scored = [x for x in scored if x[0] >= threshold]
     return max(scored, key=lambda x: x[0])[1] if scored else None
+
+
+# ---------------------------------------------------------------- goal reasoning: event -> contrast -> hypothesis
+# General by construction: a situation is described by property (colour, size class) x measure (how many,
+# how many cells, distance to what I control) plus global counts. No goal types are written by hand; the goal
+# is whatever distinguishes the winning screen from every screen where the level did not end.
+def size_class(n):
+    return 0 if n <= 30 else 1 if n <= 120 else 2
+
+
+def gap(a, b):
+    """Empty cells between two boxes (y0, x0, y1, x1); 0 = touching or overlapping."""
+    return max(b[1] - a[3] - 1, a[1] - b[3] - 1, 0) + max(b[0] - a[2] - 1, a[0] - b[2] - 1, 0)
+
+
+def features(objs, player=(), step=1):
+    """Situation features. `player` = types of the thing the agent controls (may be empty)."""
+    f = {"objects": len(objs), "types": len({o.type for o in objs})}
+    by = {}
+    for o in objs:
+        by.setdefault(o.colour, []).append(o)
+        k = ("count", "size", size_class(o.size))
+        f[k] = f.get(k, 0) + 1
+    f["colours"] = len(by)
+    f["odd"] = sum(len(v) == 1 for v in by.values())
+    me = [o.box for o in objs if o.type in player]
+    box = (min(b[0] for b in me), min(b[1] for b in me), max(b[2] for b in me), max(b[3] for b in me)) if me else None
+    for c, group in by.items():
+        f[("count", "colour", c)] = len(group)
+        f[("cells", "colour", c)] = sum(o.size for o in group)
+        others = [o for o in group if o.type not in player]
+        if box and others:
+            f[("dist", "colour", c)] = round(min(gap(box, o.box) for o in others) / max(step, 1))
+    return f
+
+
+def val(f, k):
+    """A missing count is 0; a missing distance is unknown (the thing is not there)."""
+    return f.get(k, None if isinstance(k, tuple) and k[0] == "dist" else 0)
+
+
+def induce(win, others, start):
+    """Contrast (method of difference): features whose value on the winning screen was never seen on a
+    non-winning screen (weight 2) or at least differs from the level's start (weight 1).
+    Returns {feature: (direction, to_zero, magnitude, weight)}."""
+    schema = {}
+    for k in set(win) | set(start):
+        w, s0 = val(win, k), val(start, k)
+        if w is None or s0 is None or w == s0:
+            continue
+        seen = [v for v in (val(o, k) for o in others) if v is not None]
+        novel = bool(seen) and (w < min(seen) or w > max(seen))
+        schema[k] = (1 if w > s0 else -1, w == 0, abs(w - s0), 2 if novel else 1)
+    return schema
+
+
+def translate(schema, src_start, dst_start):
+    """Carry a schema to another level: a colour that is absent there is replaced by the colour of the same
+    rarity rank (structure mapping at feature level; also makes the reasoning colour-permutation safe)."""
+    def ranked(f):
+        cs = [k[2] for k in f if isinstance(k, tuple) and k[:2] == ("count", "colour")]
+        return sorted(cs, key=lambda c: (f[("count", "colour", c)], f.get(("cells", "colour", c), 0), c))
+    src, dst = ranked(src_start), ranked(dst_start)
+    out = {}
+    for k, v in schema.items():
+        if isinstance(k, tuple) and k[1] == "colour" and k[2] not in dst:
+            # ponytail: rank mapping only when both scenes have the same number of colours; map by role if it bites
+            if len(src) != len(dst) or k[2] not in src:
+                continue
+            k = (k[0], "colour", dst[src.index(k[2])])
+        out[k] = v
+    return out
+
+
+def progress(f, schema, start):
+    """How far a situation has moved from this level's start in the schema's directions, in [0, 1]."""
+    num = den = 0.0
+    for k, (d, to_zero, mag, w) in schema.items():
+        v, s0 = val(f, k), val(start, k)
+        span = s0 if to_zero else mag  # "to zero": all of it has to go; otherwise: as far as it went last time
+        if v is None or s0 is None or span <= 0:
+            continue
+        num += w * min(1.0, max(0.0, d * (v - s0) / span))
+        den += w
+    return num / den if den else 0.0
+
+
+def schema_text(schema, top=4):
+    """Readable form for logs and reports."""
+    items = sorted(schema.items(), key=lambda kv: -kv[1][3])[:top]
+    name = lambda k: " ".join(str(x) for x in k) if isinstance(k, tuple) else k
+    return [f"{name(k)} {'to 0' if z else ('up' if d > 0 else 'down')}{' (never seen before)' if w == 2 else ''}"
+            for k, (d, z, m, w) in items]
 
 
 # ---------------------------------------------------------------- skills
@@ -320,12 +414,14 @@ class Agent:
         self.rng = random.Random(seed)
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
         self.usage = Counter()
+        self.goal_log = []  # one entry per completed level: what was learned, and how well the old goal predicted it
         self.new_game()
 
     # ---- bookkeeping
     def new_game(self):
         self.player, self.move_vec, self.hud, self.hud_votes = set(), {}, None, None
         self.floor = set()       # colours the player has walked onto (mental map: free space)
+        self.goal, self.level = None, 0   # goal schema learned in this game (schema, source start features)
         self.new_level()
 
     def new_level(self):
@@ -337,6 +433,8 @@ class Agent:
         self.last, self.last_changed, self.skill = None, False, None
         self.visited, self.blocked, self.nav_target = set(), set(), None  # mental map of this level
         self.desc = {}  # type -> relational description when acted on (for structure mapping)
+        self.seen = {}  # state -> grid: every screen of this level where the level did NOT end (free evidence)
+        self.start_grid = None
 
     def key(self, act, obj):
         return (act, obj.type if obj else None) if act == CLICK else (act, None)
@@ -417,7 +515,8 @@ class Agent:
                                      (CLICK, o.x, o.y)))
             self.keys_at[self.state] = sorted(keys, key=lambda x: x[0])
         if self.start_state is None:
-            self.start_state = self.state
+            self.start_state, self.start_grid = self.state, self.grid
+        self.seen.setdefault(self.state, self.grid)
         b = self.player_box() if self.player else None
         if b:
             self.visited.add(b[:2])
@@ -524,9 +623,37 @@ class Agent:
         self.last, self.last_changed = (act, obj), changed
         if level_up:
             self.store_recipe(s0, k)
+            self.learn_goal(f_new)
+            self.level += 1
             self.new_level()
         elif died:
             self.skill = None  # the attempt restarts; level knowledge (tried, edges) is kept
+
+    def feat(self, grid):
+        step = max([max(abs(dx), abs(dy)) for dx, dy in self.steps().values()] or [1])
+        return features(objects(grid, self.hud), self.player, step)
+
+    def learn_goal(self, f_new):
+        """At a win: contrast the winning screen (second-to-last frame, E10) with all non-winning screens."""
+        entry = {"level": self.level, "screens": len(self.seen), "schema": None, "rank": None}
+        self.goal_log.append(entry)
+        frames = f_new.frame or []
+        # the last level has no "next level" frame: its final frame is the winning screen
+        shot = frames[-1:] if f_new.state.name == "WIN" else frames[-2:-1]
+        if not shot or np.array(shot[0]).shape != self.hud.shape:
+            return  # the winning screen was not shown: nothing to contrast
+        win = self.feat(np.array(shot[0]))
+        others = [self.feat(g) for g in self.seen.values()]
+        start = self.feat(self.start_grid)
+        if self.goal:  # measurement: would the goal learned earlier have picked out this winning screen?
+            sch = translate(self.goal[0], self.goal[1], start)
+            pw = progress(win, sch, start)
+            entry["rank"] = sum(progress(o, sch, start) >= pw for o in others) / max(1, len(others))
+        schema = induce(win, others, start)
+        if schema:
+            self.goal = (schema, start)
+            self.mem.goals.append(self.goal)
+            entry["schema"] = schema_text(schema)
 
     def displacements(self, before, after):
         """type -> (dx, dy) for types whose single instance moved."""

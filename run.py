@@ -41,6 +41,7 @@ def play(arc, game, agent, budget, seed=0):
     env = arc.make(game, seed=seed)
     f = env.reset()
     agent.new_game()
+    g0 = len(getattr(agent, "goal_log", []))
     actions = since = game_overs = 0
     per_level = []  # actions spent on each completed level (resets included)
     while actions < budget and f is not None:
@@ -62,7 +63,7 @@ def play(arc, game, agent, budget, seed=0):
             f = f2
         actions += 1
         since += 1
-    return {"actions_per_level": per_level, "game_overs": game_overs}
+    return {"actions_per_level": per_level, "game_overs": game_overs, "goals": getattr(agent, "goal_log", [])[g0:]}
 
 
 def run_seed(games, kind, budget, seed):
@@ -83,6 +84,10 @@ def main():
     ap.add_argument("--label", help="save the result to runs/<date>-<label>.json")
     args = ap.parse_args()
 
+    git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
+    # provenance is taken when the run starts, so later edits cannot change what the record claims
+    prov = {"commit": git("rev-parse", "--short", "HEAD"),
+            "uncommitted_code_changes": bool(git("status", "--porcelain", "--", "*.py"))}
     games = []
     for g in args.games:
         games += {"dev": DEV, "heldout": HELDOUT, "all": DEV + HELDOUT}.get(g, [g])
@@ -105,21 +110,24 @@ def main():
     print(f"score  per seed {[round(x, 2) for x in sco]}  ->  mean {statistics.mean(sco):.2f} +/- {sd(sco):.2f}")
     print(f"actions per completed level: median {statistics.median(apl) if apl else '-'}  (n={len(apl)})")
     print(f"game overs per seed {[sum(st['game_overs'] for st in stats) for *_, stats in runs]}")
+    ranks = [g["rank"] for *_, stats in runs for st in stats for g in st["goals"] if g["rank"] is not None]
+    learned = sum(g["schema"] is not None for *_, stats in runs for st in stats for g in st["goals"])
+    print(f"goals learned from wins: {learned}; goal rank (0 best, 0.5 chance): "
+          f"{'mean %.2f (n=%d)' % (statistics.mean(ranks), len(ranks)) if ranks else '- (no second level won)'}")
     if args.agent == "v1":
         _, agent, mem, _ = runs[0]
         print("seed 0 skill usage:", dict(agent.usage.most_common()))
         print(f"seed 0 memory: {len(mem.roles)} object types, {len(mem.recipes)} recipes")
     if args.label:
-        save(args, games, runs, lv, sco, apl)
+        save(args, games, runs, lv, sco, apl, prov)
 
 
-def save(args, games, runs, lv, sco, apl):
+def save(args, games, runs, lv, sco, apl, prov):
     """Run record: everything needed to trace a reported number back to code + command."""
-    git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
     sd = lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0
     record = {
         "label": args.label, "date": datetime.datetime.now().isoformat(timespec="seconds"),
-        "commit": git("rev-parse", "--short", "HEAD"), "uncommitted_code_changes": bool(git("status", "--porcelain", "--", "*.py")),
+        **prov,
         "command": "run.py " + " ".join(sys.argv[1:]), "agent": args.agent, "budget": args.budget, "games": games,
         "summary": {"levels_per_seed": lv, "levels_mean": statistics.mean(lv), "levels_sd": sd(lv),
                     "score_per_seed": sco, "score_mean": statistics.mean(sco), "score_sd": sd(sco),
