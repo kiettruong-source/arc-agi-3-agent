@@ -34,7 +34,7 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    | `click_all` | exploit | click every object of a type that did something |
    | `go_to` | exploit | plan a route on the mental map to each untried object type |
    | `explore_map` | explore | plan a route to the nearest place the player has never been |
-   | `frontier` | explore | graph exploration: untried action here, else shortest known path to the nearest screen with one (small objects first) |
+   | `frontier` | explore | graph exploration: untried action here, else shortest known path to the nearest screen with one (small objects first; twins of an object type that did nothing on this screen wait until last) |
 
 3. **Explore vs exploit**: replay first if a recipe matches; otherwise explore while unknown things remain,
    unless an exploit skill's track record (value per step) is better. When no skill applies: graph exploration (`frontier`), random only as a last resort.
@@ -53,15 +53,17 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    - The goal — not the action sequence — is carried to the next level and pursued first: the search becomes
      best-first, actions are ordered by their known effect (means-ends analysis), `go_to` walks to the goal's
      colours. It is dropped when it stops making progress.
-   - Switches, off by default because they did not help on the dev games (E12): treat a game over at the step
-     limit as a timeout instead of a deadly object (`deadline`); replay only short recipes (`replay5`).
+   - Switches, off by default because they did not help on the dev games (E12, E16): treat a game over at the step
+     limit as a timeout instead of a deadly object (`deadline`); replay only short recipes (`replay5`); reset on
+     purpose at a dead end (`reset`).
 7. **Optional LLM reasoner** (`llm.py`, off unless `LLM_BASE_URL` is set): a local vision model proposes goal
    hypotheses *before the first win*, as conditions over the same generic features. They are data, not code,
    and never trusted: the core rejects what the evidence already contradicts and refutes the rest in play.
    Scripts for a GPU cluster are in `cluster/`.
 
-Current state (dev games, 3 seeds): see `docs/protocol.md`. The goal reasoning works on toy worlds but has not
-yet improved the dev-game result (E12, a negative result); the LLM reasoner has not yet been run with a real model (E13).
+Current state (15 dev games, 3 seeds, `docs/protocol.md`): **first exposure 0.28** (7 levels; random baseline 0.11,
+1.33 levels), **best play 1.97**. The goal reasoning works on toy worlds but has not yet improved the dev-game
+result (E12, a negative result); the LLM reasoner has not yet been run with a real model (E13).
 
 ## Evaluation metric
 

@@ -216,6 +216,32 @@ acted on).
 - **Conclusion:** the target 0.9 is reached in the best-play number (1.85). The routes the blind search finds are, in five of seven levels, much shorter than the human action counts; the agent's problem is the cost of *finding* them. First exposure is unchanged, as it must be.
 - **Caveat:** best play is not a measure of learning. It is only possible where the same game can be played twice.
 
+### E16 — Reset as a jump back to the level's start (2026-11-12)
+- **Idea (I43):** attempts are short and a reset restores the level (E10), so a reset is a 1-action jump the graph search could use on purpose instead of walking on until the timeout.
+- **Version 1 (commit `41464c8`): the jump is always on offer.** Run files `v6-reset`, `v6-cluster-reset`: first exposure **4, 4, 4 levels, score 0.04** (default: 6.67 / 0.15); best play 1.35. ls20, tn36 and tu93 lost their level.
+- **Cause (traces, 400 actions):** ls20 — after the third attempt the agent reset after every single action (91 resets): the remembered id of the level's start screen was stale (the counter mask had grown), so the route search aimed at screens that no longer exist. tn36 — 40 resets, 358 of 360 clicks on small objects: the search kept jumping back to untried small objects elsewhere instead of trying larger objects where it stood (the winning click is on a medium-sized object).
+- **Version 2 (commit `cc09b6a`):** the start id is refreshed at every fresh attempt; the jump is offered only at a dead end (nothing untried reachable by going on). Run file `v6-reset-deadend`: **identical to the default in every number** — on the dev games a dead end with untried actions elsewhere never occurs.
+- **Toy world** (one-way switches, step limit 25): 33 actions with the jump, 55 without.
+- **Conclusion:** negative result. Version 1 hurts, version 2 does nothing on the dev games. The switch stays off. The stale start id was a real bug whose fix helped on its own (see E17).
+
+### E17 — One test per cluster inside the graph search (2026-11-12)
+- **Observation (traces of first levels):** tn36 level 1 took 52 actions although its shortest route is 8: after the useful clicks, the graph search clicked 39 identical tiles one after another — each object is a separate untried action — while the winning click on another kind of object waited. vc33 level 1: 44 actions, route 5.
+- **Change:** the project's first idea (I5: test one member per cluster) applied inside the graph search — when one member of an object type has been clicked on a screen and the type has never done anything, its twins on that screen wait until everything else has been tried. A type that ever had an effect keeps all members in play. Plus the start-id refresh from E16.
+- **Result (dev, 3 seeds):**
+
+  | variant | run file (`runs/2026-11-12-…`) | first exposure: levels | first exposure: score | best play: score |
+  |---|---|---|---|---|
+  | v5 core + clean run | `v6-clean-run` | 7, 7, 6 | 0.15 ± 0.00 | 1.85 ± 0.07 |
+  | + cluster rule | `v6-cluster` | 7, 7, 6 | 0.27 ± 0.00 | 1.85 ± 0.07 |
+  | + cluster rule + start-id refresh (**new default**) | `v6-default` | **7, 7, 7** | **0.28 ± 0.00** | **1.97 ± 0.00** |
+
+  tn36 level 1: 52 → 13 actions (human 32) — full points for that level. tu93's level is now won in all three seeds. vc33 level 1 unchanged (38 actions). With the refreshed start id every clean-run route is at or below the human count, so best play equals the value of the solved levels at human speed (1.97). Exploration metrics (300 actions): useful actions 61%, new screens 1,294, wasted 23%, click coverage 74% — slightly better than before.
+- **Conclusion:** kept and on by default. First exposure 0.15 → 0.28 comes almost entirely from one level (tn36); it is one observation, not three (seeds repeat the same run).
+
+### Where the target stands (2026-11-12)
+- **Best play: 1.97** — the target of 0.9 is reached, with solutions the agent found itself; it is not a measure of learning efficiency.
+- **First exposure: 0.28** (from 0.15). By the accounting of E14, 0.9 would need two more first levels found within the human action count: cd82 (55 actions; the agent needs 223, its route is 5) and sp80 (39; the agent needs 245, its route is 4). Their solutions are short; what is missing is knowing what to aim for before the first win — the job of the LLM reasoner (E13, not yet run with a real model).
+
 ## 4. Summary of results
 
 | version | dev score | dev levels | new screens | wasted | click coverage |
@@ -230,6 +256,8 @@ acted on).
 | v5 core (v4 + goal reasoning), 3 seeds | 0.15 ± 0.00 | 6.67 ± 0.58 | | | |
 | v5 with deadline rule + short replay, 3 seeds | 0.13 ± 0.00 | 6.00 ± 0.00 | | | |
 | v5 core + clean run — **best play** (not first exposure), 3 seeds | 1.85 ± 0.07 | 6.67 ± 0.58 | | | |
+| **v6 default** (cluster rule in the graph search), first exposure, 3 seeds | 0.28 ± 0.00 | 7.00 ± 0.00 | 1294 | 23% | 74% |
+| v6 default — **best play** (not first exposure), 3 seeds | 1.97 ± 0.00 | 7.00 ± 0.00 | | | |
 
 Rows without ± are single runs made before the reproducibility fix (E9) and carry run-to-run noise of about one level. Held-out split not yet evaluated.
 
@@ -249,7 +277,9 @@ Rows without ± are single runs made before the reproducibility fix (E9) and car
 | The reasoning must be general: one loop for every game and question, no hand-written goal types | user (2026-11-12) | unseen environments |
 | Hybrid: a local LLM on bwUniCluster reasons, the core checks and plays alone without a GPU | user (2026-11-12) | best published solutions get their reasoning from an LLM (research notes §14) |
 | LLM answers are data (conditions over generic features), never executed code, and always checked against the evidence | Claude (accepted with the plan) | safety; the check is what the core contributes |
-| A new part becomes default only if it helps on the dev games; otherwise it stays a documented switch | joint (plan of 2026-11-12) | E12: deadline rule and short replay off by default, goal reasoning on |
+| A new part becomes default only if it helps on the dev games; otherwise it stays a documented switch | joint (plan of 2026-11-12) | E12: deadline rule and short replay off by default, goal reasoning on; E16: reset jump off; E17: cluster rule on |
+| Target: official score about 0.9 on the 0–100 scale, only the bwUniCluster open model as LLM | user (2026-11-12) | reverse-engineered in E14 |
+| Report two numbers, never mixed: first exposure (main) and best play (with a clean run) | user (2026-11-12) | the toolkit scores the best play; the report must say which number is which |
 
 ## 6. Bugs found and fixed
 
@@ -259,6 +289,7 @@ Rows without ± are single runs made before the reproducibility fix (E9) and car
 | HUD detection masked a button near the border | self-check (`test_agent.py`) | changes on the clicked object don't vote; repeat evidence required |
 | Player's own movement voted as HUD on small grids | maze self-check | player boxes excluded; margin scales with grid size |
 | Greedy go_to oscillated against walls | E4 trace (ls20) | mental map + BFS route planning |
+| Stale id of the level's start screen after the counter mask grew (route searches aimed at dead screens) | E16 trace: reset after every action in ls20 | id refreshed at every fresh attempt |
 | Runs not reproducible (`hash()` randomised per process) | two runs of v4 gave 7 vs 6 levels | stable `sid()` screen ids + `PYTHONHASHSEED=0` in run scripts (E9) |
 
 ## 7. Task breakdown
