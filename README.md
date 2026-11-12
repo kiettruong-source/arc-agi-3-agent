@@ -15,6 +15,7 @@ uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r
 uv run run.py dev --seeds 3 --label NAME   # evaluate on the dev games; --label saves the result to runs/
 uv run run.py dev --seeds 3 --clean-run    # also replay the found solutions in a fresh play ("best play" number)
 uv run python scripts/score_anatomy.py runs/FILE.json   # where the score points come from
+uv run python scripts/agi_metrics.py runs/FILE.json     # additional metrics: efficiency, discovery cost, route quality, breadth, transfer
 uv run run.py dev --seeds 3 --agent random   # baseline
 uv run python test_agent.py   # self-check
 uv run python scripts/info_gathering.py   # exploration metrics vs random

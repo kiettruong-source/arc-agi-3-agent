@@ -51,6 +51,32 @@ Official toolkit scorecard (RHAE-style, `arc_agi/scorecard.py`):
 - **First exposure** (main number): the first play of each game; every action from the first frame counts, exploring included. All results before E15 are of this kind.
 - **Best play** (second number, `run.py --clean-run`): after the first play, a *clean run* replays the shortest known solution of every level the agent solved, in a fresh play of the same game. The toolkit's scorecard takes the best play of a game. This number says how short the found solutions are, **not** how efficiently the agent learns, and is never mixed with first-exposure numbers. (Kepler, arXiv 2610.00834, reports the same kind of number with the same caveat.)
 
+**Additional metrics (found 2026-11-12).** The benchmark's paper (arXiv 2603.24621) names four capabilities —
+exploration, modeling, goal-setting, planning and execution — but reports no number per capability. These metrics
+fill that gap and cover the project's AGI characteristics. `uv run python scripts/agi_metrics.py runs/<file>.json`
+computes the first seven from a run file.
+
+| # | metric | what it shows | how | v6 default today (seed 0) |
+|---|---|---|---|---|
+| 1 | Levels within 5× the human count | efficiency under the official rule (the leaderboard stops a level at 5× the human count) | first-exposure actions ≤ 5 × human | **2 of 7** solved levels (cd82, tn36) |
+| 2 | Actions relative to the human | skill-acquisition efficiency | ours ÷ human, median over solved levels | 6.3× |
+| 3 | Discovery cost | exploration: search effort per step of the solution | first-exposure actions ÷ length of the shortest route found | 28 (tn36: 1.0; sp80: 61) |
+| 4 | Route vs human | planning: quality of the solution found | route length ÷ human count, median | 0.41 (shorter than the human baseline) |
+| 5 | Share of actions that execute a known skill or plan | acting from knowledge vs searching (Twin: 93%) | skill usage | 7% |
+| 6 | Breadth | generality across games | games with ≥ 1 level solved | 6 of 15 |
+| 7 | Transfer inside a game | does knowledge carry to the next level? | ours ÷ human per level; should fall | vc33: 5.4 → 23.1 (rises: no transfer) |
+| 8 | Prediction accuracy | modeling: does the agent know what an action will do? | before each action predict from the operator table whether / what changes; share right | not measured yet |
+| 9 | Goal precision | goal-setting | share of won levels where the goal in test was true on the winning screen; first hypothesis right (Twin: 87%) | too few cases (goal rank 0.05–0.23, one case) |
+| 10 | Generalization gap | generalization | every metric on held-out minus dev | not run (held-out reserved) |
+| 11 | Renaming robustness | generalization | same games with colours permuted and the grid mirrored; change in levels / actions | toy worlds only: no change |
+| 12 | Memory ablation | cross-game transfer | memory carried from earlier games vs fresh memory | not run |
+| 13 | Cost | practicality | seconds per action; LLM calls per level | not recorded |
+
+Facts from the paper that matter for reading our numbers: the human baseline is the **second-best first-run human of
+ten testers** per level (not a median); the official per-level score is capped at 1.0 (the toolkit allows 1.15, which
+changes none of our totals); official runs stop at **5× the human count** per level — by that rule five of our seven
+first-exposure levels would not count, and the first-exposure score would be 0.26 instead of 0.28.
+
 Secondary: levels completed, game overs. Exploration metrics (`scripts/info_gathering.py`, 300 actions, identical
 observer for every agent): **useful actions** (frame changed outside the HUD), **new screens** (distinct HUD-masked
 states), **wasted actions** (same state-action repeated), **click coverage** (share of the first frame's object types
@@ -332,4 +358,5 @@ uv run --with scipy python scripts/cluster_objects.py   # E1
 uv run python scripts/win_frame.py           # E10
 uv run run.py dev --seeds 3 --clean-run --label NAME   # E15: first exposure and best play
 uv run python scripts/score_anatomy.py runs/<file>.json   # E14
+uv run python scripts/agi_metrics.py runs/<file>.json     # additional metrics (section 2)
 ```
