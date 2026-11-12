@@ -80,6 +80,7 @@ class Memory:
     recipes: list = field(default_factory=list)  # [[(action, target description | None), ...], ...]
     skill_stats: dict = field(default_factory=dict)  # name -> [value_sum, steps]
     goals: list = field(default_factory=list)    # [(schema, start features of the level it was learned on), ...]
+    ops: dict = field(default_factory=dict)      # (action, type | None) -> [summed feature changes, tries]: what an action does
 
     def role(self, t):
         return self.roles.setdefault(t, {"tries": 0, "effects": 0, "deaths": 0})
@@ -302,11 +303,19 @@ class GoTo(Skill):
         return [o for o in a.objs if o.type not in a.player and o.type not in a.level_reached
                 and not a.mem.roles.get(o.type, {}).get("deaths") and o.size < a.grid.size // 8]
 
+    def goal_targets(self, a):
+        """Means-ends for movement: the goal says some colour's distance / count must go down -> walk there."""
+        goal = a.active_goal()
+        if not goal:
+            return []
+        cols = {k[2] for k, v in goal.items() if isinstance(k, tuple) and k[1] == "colour" and v[0] < 0}
+        return [o for o in self.targets(a) if o.colour in cols]
+
     def applicable(self, a):
         return a.player_box() is not None and bool(a.move_vec) and bool(self.targets(a))
 
     def next(self, a):
-        ts = self.targets(a)
+        ts = self.goal_targets(a) or self.targets(a)
         if not ts or a.player_box() is None:
             return None
         hit = [o for o in ts if a.touching(o)]
@@ -341,8 +350,8 @@ class Replay(Skill):
 
     def usable(self, a):
         for i, r in enumerate(a.mem.recipes):
-            if i in a.level_failed_recipes:
-                continue
+            if i in a.level_failed_recipes or ("replay5" not in a.off and len(r) > 5):
+                continue  # long action sequences do not fit a new layout (0 wins in 9 tries, logbook F10)
             if all(d is None or best_match(d, a.objs, a.player_box()) for _, d in r):
                 return i
         return None
@@ -380,28 +389,37 @@ class Frontier(Skill):
     name, kind = "frontier", "explore"
 
     def untested(self, a, s, p):
-        return [k for t, k in a.keys_at.get(s, []) if t <= p and (s, k) not in a.tried_exec]
+        return [(k, typ) for t, k, typ in a.keys_at.get(s, []) if t <= p and (s, k) not in a.tried_exec]
 
     def next(self, a):
         adj = {}
         for (s0, k), s1 in a.exec_edges.items():
             if s1 is not None and s1 != s0:
                 adj.setdefault(s0, []).append((k, s1))
+        goal = a.active_goal()
         for p in range(4):  # raise the tier only when nothing of the current tier is reachable
-            here = self.untested(a, a.state, p)
-            if here:
-                return a.exec_key(here[0])
-            first = {a.state: None}
+            first, dist, cands = {a.state: None}, {a.state: 0}, []
             q = deque([a.state])
-            while q:
+            while q:  # every reachable screen that still has an untried action
                 s = q.popleft()
+                if self.untested(a, s, p):
+                    cands.append(s)
+                    if not goal:
+                        break  # no goal: the nearest one (v4 behaviour)
                 for k, s1 in adj.get(s, []):
-                    if s1 in first:
-                        continue
-                    first[s1] = first[s] or k
-                    if self.untested(a, s1, p):
-                        return a.exec_key(first[s1])
-                    q.append(s1)
+                    if s1 not in first:
+                        first[s1], dist[s1] = first[s] or k, dist[s] + 1
+                        q.append(s1)
+            if not cands:
+                continue
+            # with a goal: the screen closest to the goal, minus the cost of walking there (best-first)
+            best = max(cands, key=lambda s: a.progress_of(s) - a.step_cost() * dist[s]) if goal else cands[0]
+            if best != a.state:
+                return a.exec_key(first[best])
+            here = self.untested(a, a.state, p)
+            if goal:  # means-ends: the action whose known effect shrinks the difference to the goal comes first
+                here.sort(key=lambda kt: -a.gain(kt[0][0], kt[1]))
+            return a.exec_key(here[0][0])
         return None
 
 
@@ -409,7 +427,8 @@ class Frontier(Skill):
 class Agent:
     """Each step: finish the current skill episode, or pick a new skill (explore first, then best exploit)."""
 
-    def __init__(self, memory=None, seed=0):
+    def __init__(self, memory=None, seed=0, off=()):
+        self.off = set(off)  # ablation switches: "goal", "deadline", "replay5"
         self.mem = memory or Memory()
         self.rng = random.Random(seed)
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
@@ -435,6 +454,9 @@ class Agent:
         self.desc = {}  # type -> relational description when acted on (for structure mapping)
         self.seen = {}  # state -> grid: every screen of this level where the level did NOT end (free evidence)
         self.start_grid = None
+        self.goal_now, self.start_feat, self.fcache, self.feats = None, None, {}, {}  # goal carried into this level
+        self.best_progress, self.since_progress, self.stalled = 0.0, 0, False
+        self.attempt_steps, self.budget = 0, None  # actions since the level (re)started; step limit seen at a game over
 
     def key(self, act, obj):
         return (act, obj.type if obj else None) if act == CLICK else (act, None)
@@ -507,16 +529,27 @@ class Agent:
         masked = np.where(self.hud, -1, self.grid)
         self.state = sid(masked)
         if self.state not in self.keys_at:  # executable actions on this screen, with a salience tier
-            keys = [(0, (m, None)) for m in self.actions if m != CLICK]
+            keys = [(0, (m, None), None) for m in self.actions if m != CLICK]
             if CLICK in self.actions:
                 for o in self.objs:
                     if not self.suspect_hud(o):
                         keys.append((0 if o.size <= 30 else 1 if o.size <= 120 else 2 if o.size <= 500 else 3,
-                                     (CLICK, o.x, o.y)))
+                                     (CLICK, o.x, o.y), o.type))
             self.keys_at[self.state] = sorted(keys, key=lambda x: x[0])
         if self.start_state is None:
             self.start_state, self.start_grid = self.state, self.grid
+            if self.goal and "goal" not in self.off:  # carry the goal (not the actions) into the new level
+                self.start_feat = self.feat(self.grid)
+                self.goal_now = translate(self.goal[0], self.goal[1], self.start_feat) or None
         self.seen.setdefault(self.state, self.grid)
+        if self.goal_now and not self.stalled:  # is the carried goal getting us anywhere?
+            pr = self.progress_of(self.state)
+            if pr > self.best_progress + 1e-9:
+                self.best_progress, self.since_progress = pr, 0
+            else:
+                self.since_progress += 1
+                if self.since_progress > (self.budget // 2 if self.budget else 30):
+                    self.stalled, self.skill = True, None  # give up on it for this level: back to plain exploring
         b = self.player_box() if self.player else None
         if b:
             self.visited.add(b[:2])
@@ -536,8 +569,12 @@ class Agent:
             exploit = [s for s in self.skills if s.kind == "exploit" and s.applicable(self)]
             best = max(exploit, key=self.value, default=None)
             replay = next((s for s in exploit if s.name == "replay"), None)
-            # analogy first (cheap), then explore while unknown things remain, unless an exploit skill proved better
-            if replay:
+            goto = next(s for s in self.skills if s.name == "go_to")
+            # a carried goal comes first (reverse thinking: from the goal to the action); then analogy (cheap),
+            # then explore while unknown things remain, unless an exploit skill proved better
+            if self.active_goal():
+                self.skill = goto if goto.applicable(self) and goto.goal_targets(self) else Frontier()
+            elif replay:
                 self.skill = replay
             elif explore and (best is None or self.value(best) <= self.value(explore[0])):
                 self.skill = explore[0]
@@ -571,6 +608,12 @@ class Agent:
         changed = new.shape != self.grid.shape or bool(((self.grid != new) & ~self.hud).any())
         level_up = f_new.levels_completed > f_prev.levels_completed
         died = f_new.state.name == "GAME_OVER"
+        # deadline reasoning (E10): a game over at the step limit is a timeout, nobody's fault. Only a death
+        # clearly before a limit already seen is blamed on what was just touched; the first one never is.
+        self.attempt_steps += 1
+        blame = died and ("deadline" in self.off or (self.budget is not None and self.attempt_steps < 0.8 * self.budget))
+        if died:
+            self.budget = max(self.budget or 0, self.attempt_steps)
 
         self.tried.add((s0, k))
         ek = (CLICK, obj.x, obj.y) if act == CLICK and obj else (act, None)
@@ -582,7 +625,7 @@ class Agent:
             r = self.mem.role(obj.type)
             r["tries"] += 1
             r["effects"] += changed
-            r["deaths"] += died
+            r["deaths"] += blame
 
         # agentness: types that moved under a movement action are the player; learn each move's displacement
         if act != CLICK and not level_up and new.shape == self.grid.shape:
@@ -596,7 +639,7 @@ class Agent:
                 self.move_vec[act] = (dx, dy)
             # mental map: where the player stepped is floor; a move that didn't move it (or killed it) is a wall
             b1 = self.player_box(after) if self.player else None
-            if b0 and (b1 == b0 or died):
+            if b0 and (b1 == b0 or blame):
                 self.blocked.add((b0[:2], act))
             elif b0 and b1:
                 region = self.grid[b1[0]:b1[2] + 1, b1[1]:b1[3] + 1]
@@ -611,11 +654,19 @@ class Agent:
 
         # skill credit: new state = small win, level = big win, death = loss
         seen = {v for v in self.edges.values()}
-        gain = 10.0 * level_up + 1.0 * (changed and not died) - 5.0 * died
+        gain = 10.0 * level_up + 1.0 * (changed and not died) - 5.0 * blame
         if not died and not level_up:
             s1 = sid(np.where(self.hud, -1, new)) if new.shape == self.hud.shape else None
             self.edges[(s0, k)] = self.exec_edges[(s0, ek)] = s1
             gain = gain if s1 not in seen else 0.2 * gain
+            if s1 is not None:  # operator table: what does this kind of action change? (means-ends analysis)
+                fa, fb = self.feat_of(s0), self.feat(new)
+                op = self.mem.ops.setdefault((act, obj.type if act == CLICK and obj else None), [{}, 0])
+                op[1] += 1
+                for key in set(fa) | set(fb):
+                    va, vb = val(fa, key), val(fb, key)
+                    if va is not None and vb is not None and va != vb:
+                        op[0][key] = op[0].get(key, 0) + vb - va
         st = self.mem.skill_stats.setdefault(skill, [1.0, 1])
         st[0] += gain
         st[1] += 1
@@ -628,6 +679,35 @@ class Agent:
             self.new_level()
         elif died:
             self.skill = None  # the attempt restarts; level knowledge (tried, edges) is kept
+
+    def active_goal(self):
+        return self.goal_now if self.goal_now and not self.stalled else None
+
+    def feat_of(self, s):
+        if s not in self.feats:
+            self.feats[s] = self.feat(self.seen[s]) if s in self.seen else {}
+        return self.feats[s]
+
+    def progress_of(self, s):
+        if s not in self.fcache:
+            self.fcache[s] = progress(self.feat_of(s), self.goal_now, self.start_feat)
+        return self.fcache[s]
+
+    def step_cost(self):
+        """Walking is paid in progress: a full attempt's worth of steps costs as much as reaching the goal."""
+        return 1.0 / self.budget if self.budget else 0.02
+
+    def gain(self, act, typ):
+        """Predicted progress from one action of this kind, from the operator table (0 if unknown)."""
+        op = self.mem.ops.get((act, typ))
+        if not op or not op[1]:
+            return 0.0
+        g = 0.0
+        for k, (d, to_zero, mag, w) in self.goal_now.items():
+            span = val(self.start_feat, k) if to_zero else mag
+            if k in op[0] and span:
+                g += w * d * (op[0][k] / op[1]) / span
+        return g
 
     def feat(self, grid):
         step = max([max(abs(dx), abs(dy)) for dx, dy in self.steps().values()] or [1])
@@ -695,6 +775,7 @@ class Agent:
             self.mem.recipes.append(recipe)
 
     def on_reset(self):
+        self.attempt_steps = 0
         self.last, self.last_changed, self.skill = None, False, None
 
 

@@ -122,24 +122,28 @@ def test_frontier_exploration():
     assert "frontier" in agent.usage and "random" not in agent.usage, agent.usage
 
 
-def collect_game(agent, levels, max_steps=80):
+def collect_game(agent, levels, max_steps=120, cmap=None, flip=False):
     """Toy "collect" world: clicking a coin (colour 4) removes it; a level ends when no coin is left.
-    Distractors (colour 7) never matter. Returns the number of actions used per level."""
+    Distractors (y, x, colour) never matter. `cmap` / `flip` show the same world with colours renamed and the
+    grid mirrored. Returns the number of actions used per level."""
     def scene(coins, junk):
         g = np.zeros((16, 16), int)
         for y, x in coins:
             g[y, x] = 4
-        for y, x in junk:
-            g[y:y + 2, x:x + 2] = 7
-        return g
+        for y, x, c in junk:
+            g[y:y + 2, x:x + 2] = c
+        if cmap:
+            g = np.vectorize(lambda v: cmap.get(v, v))(g)
+        return np.fliplr(g) if flip else g
     used, lvl = [0] * len(levels), 0
     coins, junk = list(levels[0][0]), levels[0][1]
     f = frame(scene(coins, junk))
     for _ in range(max_steps):
         act, data = agent.choose(f)
         used[lvl] += 1
-        if (data["y"], data["x"]) in coins:
-            coins.remove((data["y"], data["x"]))
+        pos = (data["y"], 15 - data["x"] if flip else data["x"])
+        if pos in coins:
+            coins.remove(pos)
         if coins:
             f2 = frame(scene(coins, junk), levels=lvl)
         else:
@@ -154,23 +158,102 @@ def collect_game(agent, levels, max_steps=80):
     return used
 
 
-COLLECT = [([(2, 2), (2, 8), (9, 4)], [(12, 10)]),
-           ([(1, 1), (1, 6), (5, 12), (9, 3), (13, 8)], [(11, 12), (6, 6)])]
+# level 2 has more coins and six eye-catching distractors (each a rare colour, which plain exploring tries first)
+COLLECT = [([(2, 2), (2, 8), (9, 4)], [(12, 10, 7)]),
+           ([(1, 1), (1, 6), (5, 12), (9, 3), (13, 8)],
+            [(11, 12, 7), (6, 6, 2), (3, 10, 3), (8, 8, 5), (13, 2, 6), (5, 3, 8), (10, 13, 9)])]
 
 
 def test_goal_from_win():
     agent = Agent()
-    collect_game(agent, COLLECT)
+    used = collect_game(agent, COLLECT)
     assert len(agent.goal_log) == 2, agent.goal_log
     schema = agent.mem.goals[0][0]
     d, to_zero, mag, weight = schema[("count", "colour", 4)]
     assert (d, to_zero, weight) == (-1, True, 2), schema          # "no coin left" was never seen before the win
     assert ("count", "colour", 7) not in schema, schema            # distractors are not part of the goal
     assert agent.goal_log[1]["rank"] == 0.0, agent.goal_log        # level 1's goal picks out level 2's win screen
+    # using the goal: level 2 (5 coins among 7 distractors) takes about one click per coin
+    blind = collect_game(Agent(off={"goal"}), COLLECT)
+    assert used[1] <= 7 and used[1] <= blind[1], (used, blind)
+
+
+def test_general_reasoning():
+    # same reasoning code, a different kind of world: walk to a target (colour 3); distractors lie nearer.
+    def reach_game(agent, max_steps=200):
+        levels = [dict(player=(1, 5), target=(10, 5), walls=[(6, x) for x in range(1, 11)], junk=[]),
+                  dict(player=(1, 1), target=(10, 10), walls=[], junk=[(1, 4, 6), (4, 1, 7), (3, 3, 8)])]
+        def scene(L, pos):
+            g = np.zeros((12, 12), int)
+            for y, x in L["walls"]:
+                g[y, x] = 5
+            for y, x, c in L["junk"]:
+                g[y, x] = c
+            g[L["target"]] = 3
+            g[pos] = 2
+            return g
+        used, lvl = [0, 0], 0
+        L, pos = levels[0], levels[0]["player"]
+        f = frame(scene(L, pos), actions=(1, 2, 3, 4))
+        for _ in range(max_steps):
+            act, _ = agent.choose(f)
+            used[lvl] += 1
+            dy, dx = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[act]
+            ny, nx = pos[0] + dy, pos[1] + dx
+            if 0 <= ny < 12 and 0 <= nx < 12 and scene(L, pos)[ny, nx] == 0:
+                pos = (ny, nx)
+            if abs(pos[0] - L["target"][0]) + abs(pos[1] - L["target"][1]) > 1:
+                f2 = frame(scene(L, pos), levels=lvl, actions=(1, 2, 3, 4))
+            else:
+                won, lvl = scene(L, pos), lvl + 1
+                if lvl == 2:
+                    agent.update(f, frame(won, levels=2, state="WIN", actions=(1, 2, 3, 4)))
+                    break
+                L, pos = levels[1], levels[1]["player"]
+                f2 = frame(scene(L, pos), levels=1, actions=(1, 2, 3, 4), before=won)
+            agent.update(f, f2)
+            f = f2
+        return used
+    agent = Agent()
+    used, blind = reach_game(agent), reach_game(Agent(off={"goal"}))
+    schema = agent.mem.goals[0][0]
+    assert schema[("dist", "colour", 3)][:2] == (-1, True), schema     # "touching the target" learned by contrast
+    assert used[1] < blind[1] and used[1] <= 24, (used, blind)         # shortest route is 17 moves
+    # same world with colours renamed and the grid mirrored: the same number of actions
+    plain = collect_game(Agent(), COLLECT)
+    renamed = collect_game(Agent(), COLLECT, cmap={4: 9, 9: 4, 7: 1, 2: 12, 3: 11}, flip=True)
+    assert plain == renamed, (plain, renamed)
+
+
+def test_timeout_is_not_deadly():
+    # a click world with a step limit of 10 and no way to win: no object may end up "deadly"
+    def run(agent):
+        g = np.zeros((16, 16), int)
+        for i in range(3):
+            g[12:14, 2 + 5 * i:4 + 5 * i] = 6
+            g[3, 3 + 5 * i] = 9
+        f = frame(g)
+        for step in range(1, 36):
+            act, data = agent.choose(f)
+            g2 = np.array(f.frame[-1])
+            if g2[data["y"], data["x"]] == 6:
+                i = (data["x"] - 2) // 5
+                g2[3, 3 + 5 * i] = 2 if g2[3, 3 + 5 * i] == 9 else 9
+            dead = step % 10 == 0
+            agent.update(f, frame(g2, state="GAME_OVER" if dead else "NOT_FINISHED"))
+            if dead:
+                agent.on_reset()
+                g2 = g
+            f = frame(g2)
+        return sum(r["deaths"] for r in agent.mem.roles.values())
+    assert run(Agent()) == 0
+    assert run(Agent(off={"deadline"})) > 0   # the old rule blamed whatever was clicked last
 
 
 if __name__ == "__main__":
     test_goal_from_win()
+    test_general_reasoning()
+    test_timeout_is_not_deadly()
     test_frontier_exploration()
     test_structure_mapping()
     test_perception()

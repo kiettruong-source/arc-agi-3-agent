@@ -1,6 +1,6 @@
 """Evaluate an agent on ARC-AGI-3 games with the official scorecard metric.
 
-uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME]
+uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5]
 
 --label NAME saves the full result to runs/<date>-NAME.json (the evidence file behind every reported number).
 
@@ -66,11 +66,11 @@ def play(arc, game, agent, budget, seed=0):
     return {"actions_per_level": per_level, "game_overs": game_overs, "goals": getattr(agent, "goal_log", [])[g0:]}
 
 
-def run_seed(games, kind, budget, seed):
+def run_seed(games, kind, budget, seed, off=()):
     """One full run: fresh scorecard, one analogy memory shared across all games."""
     arc = arc_agi.Arcade()
     mem = Memory()
-    agent = Agent(mem, seed) if kind == "v1" else RandomAgent(seed)
+    agent = Agent(mem, seed, off) if kind == "v1" else RandomAgent(seed)
     stats = [play(arc, g, agent, budget, seed) for g in games]
     return arc.get_scorecard(), agent, mem, stats
 
@@ -82,6 +82,7 @@ def main():
     ap.add_argument("--budget", type=int, default=1000)
     ap.add_argument("--seeds", type=int, default=1, help="number of seeds (game + agent), 0..n-1")
     ap.add_argument("--label", help="save the result to runs/<date>-<label>.json")
+    ap.add_argument("--off", default="", help="ablation: comma-separated parts to switch off (goal, deadline, replay5)")
     args = ap.parse_args()
 
     git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
@@ -92,7 +93,8 @@ def main():
     for g in args.games:
         games += {"dev": DEV, "heldout": HELDOUT, "all": DEV + HELDOUT}.get(g, [g])
 
-    runs = [run_seed(games, args.agent, args.budget, seed) for seed in range(args.seeds)]
+    off = [x for x in args.off.split(",") if x]
+    runs = [run_seed(games, args.agent, args.budget, seed, off) for seed in range(args.seeds)]
     seeds = range(args.seeds)
     print(f"\n{'game':6} " + " ".join(f"{'s' + str(i):>9}" for i in seeds) + "   (levels / score per seed)")
     for j, g in enumerate(games):
@@ -105,7 +107,7 @@ def main():
     sco = [sc.score for sc, *_ in runs]
     apl = [n for *_, stats in runs for st in stats for n in st["actions_per_level"]]
     sd = lambda xs: statistics.stdev(xs) if len(xs) > 1 else 0.0
-    print(f"\nagent={args.agent} games={len(games)} budget={args.budget} seeds={args.seeds}")
+    print(f"\nagent={args.agent} games={len(games)} budget={args.budget} seeds={args.seeds} off={off}")
     print(f"levels per seed {lv}  ->  mean {statistics.mean(lv):.2f} +/- {sd(lv):.2f}")
     print(f"score  per seed {[round(x, 2) for x in sco]}  ->  mean {statistics.mean(sco):.2f} +/- {sd(sco):.2f}")
     print(f"actions per completed level: median {statistics.median(apl) if apl else '-'}  (n={len(apl)})")
