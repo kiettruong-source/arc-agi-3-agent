@@ -1,6 +1,6 @@
 """Evaluate an agent on ARC-AGI-3 games with the official scorecard metric.
 
-uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,reset,cluster,llm | none] [--clean-run] [--rename N] [--fresh-memory]
+uv run run.py [dev|heldout|all|<game> ...] [--agent v1|random] [--budget 1000] [--seeds 3] [--label NAME] [--off goal,deadline,replay5,reset,cluster,order,llm | none] [--clean-run] [--rename N] [--fresh-memory]
 
 --label NAME saves the full result to runs/<date>-NAME.json (the evidence file behind every reported number).
 --clean-run  after the normal play (the "first exposure" numbers), a second play replays the shortest known
@@ -182,7 +182,7 @@ def main():
     ap.add_argument("--clean-run", action="store_true", help="add a second play that replays the found solutions")
     ap.add_argument("--rename", type=int, default=0, help="show every game with colours renamed (permutation N) and mirrored")
     ap.add_argument("--fresh-memory", action="store_true", help="empty memory at the start of every game")
-    ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, reset, cluster, llm (comma-separated); 'none' = all on; "
+    ap.add_argument("--off", help="parts to switch off: goal, deadline, replay5, reset, cluster, order, llm (comma-separated); 'none' = all on; "
                                   "default: the agent's own default (see Agent.DEFAULT_OFF and the protocol)")
     args = ap.parse_args()
 

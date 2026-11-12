@@ -500,7 +500,7 @@ class Agent:
     DEFAULT_OFF = ("deadline", "replay5", "reset")
 
     def __init__(self, memory=None, seed=0, off=None):
-        self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "reset", "cluster", "llm"
+        self.off = set(self.DEFAULT_OFF if off is None else off)  # switches: "goal", "deadline", "replay5", "reset", "cluster", "order", "llm"
         self.mem = memory or Memory()
         self.rng = random.Random(seed)
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
@@ -605,16 +605,24 @@ class Agent:
             self.hud_votes = np.zeros(self.grid.shape, int)
         self.actions = [a.value if hasattr(a, "value") else int(a) for a in f.available_actions] or list(MOVES)
         self.objs = objects(self.grid, self.hud)
+        if "order" not in self.off:
+            # the order of objects must not depend on colour numbers (E18: a renamed game was played differently):
+            # top-to-bottom, left-to-right instead of colour by colour
+            self.objs.sort(key=lambda o: (o.box[0], o.box[1], o.size))
         masked = np.where(self.hud, -1, self.grid)
         self.state = sid(masked)
         if self.state not in self.keys_at:  # executable actions on this screen, with a salience tier
             keys = [(0, (m, None), None) for m in self.actions if m != CLICK]
+            rank = {}  # inside a size tier: rare kinds of object first, then small ones (not: lowest colour number)
             if CLICK in self.actions:
+                twins = Counter(o.type for o in self.objs)
                 for o in self.objs:
                     if not self.suspect_hud(o):
-                        keys.append((0 if o.size <= 30 else 1 if o.size <= 120 else 2 if o.size <= 500 else 3,
-                                     (CLICK, o.x, o.y), o.type))
-            self.keys_at[self.state] = sorted(keys, key=lambda x: x[0])
+                        key = (CLICK, o.x, o.y)
+                        keys.append((0 if o.size <= 30 else 1 if o.size <= 120 else 2 if o.size <= 500 else 3, key, o.type))
+                        if "order" not in self.off:
+                            rank[key] = (twins[o.type], o.size)
+            self.keys_at[self.state] = sorted(keys, key=lambda x: (x[0], rank.get(x[1], (0, 0))))
         if self.start_state is None:
             self.start_state, self.start_grid = self.state, self.grid
             if self.goal and "goal" not in self.off:  # carry the goal (not the actions) into the new level
