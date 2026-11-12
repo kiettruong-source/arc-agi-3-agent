@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.ndimage import label
 
+import llm
+
 MOVES = (1, 2, 3, 4)
 CLICK = 6
 
@@ -211,6 +213,46 @@ def progress(f, schema, start):
         num += w * min(1.0, max(0.0, d * (v - s0) / span))
         den += w
     return num / den if den else 0.0
+
+
+# A goal hypothesis from outside (the LLM) is a list of conditions over the same features. It is data, not code:
+# the core can check it against the evidence and pursue it with the same machinery as a goal learned from a win.
+OPS = {"==": lambda a, b: a == b, "<=": lambda a, b: a <= b, ">=": lambda a, b: a >= b}
+
+
+def conditions(goal):
+    """Validate {"all": [{"measure", "colour" | "size", "op", "value"}, ...]} -> [(feature, op, value)] or None."""
+    out = []
+    for c in (goal.get("all") or []) if isinstance(goal, dict) else []:
+        if not isinstance(c, dict):
+            return None
+        m, op, v = c.get("measure"), c.get("op"), c.get("value")
+        if op not in OPS or isinstance(v, bool) or not isinstance(v, (int, float)):
+            return None
+        if m in ("objects", "types", "colours", "odd"):
+            key = m
+        elif m in ("count", "cells", "dist") and isinstance(c.get("colour"), int):
+            key = (m, "colour", c["colour"])
+        elif m == "count" and c.get("size") in (0, 1, 2):
+            key = ("count", "size", c["size"])
+        else:
+            return None
+        out.append((key, op, v))
+    return out or None
+
+
+def holds(conds, f):
+    return all(val(f, k) is not None and OPS[op](val(f, k), x) for k, op, x in conds)
+
+
+def to_schema(conds, start):
+    """A proposed goal in the form the search pursues; parts already true at the level's start drop out."""
+    schema = {}
+    for k, op, x in conds:
+        s0 = val(start, k)
+        if s0 is not None and not OPS[op](s0, x):
+            schema[k] = (1 if x > s0 else -1, x == 0, abs(x - s0), 2)
+    return schema
 
 
 def schema_text(schema, top=4):
@@ -434,6 +476,7 @@ class Agent:
         self.skills = [Probe(), ExploreMap(), Replay(), Repeat(), ClickAll(), GoTo()]
         self.usage = Counter()
         self.goal_log = []  # one entry per completed level: what was learned, and how well the old goal predicted it
+        self.llm_log = []   # one entry per question to the LLM: how many goals it proposed, how many survived the evidence
         self.new_game()
 
     # ---- bookkeeping
@@ -457,6 +500,8 @@ class Agent:
         self.goal_now, self.start_feat, self.fcache, self.feats = None, None, {}, {}  # goal carried into this level
         self.best_progress, self.since_progress, self.stalled = 0.0, 0, False
         self.attempt_steps, self.budget = 0, None  # actions since the level (re)started; step limit seen at a game over
+        self.hyps, self.goal_conds, self.goal_why, self.refuted = [], None, None, []  # proposed goals waiting / in test
+        self.level_steps, self.asks, self.last_ask = 0, 0, -999
 
     def key(self, act, obj):
         return (act, obj.type if obj else None) if act == CLICK else (act, None)
@@ -542,14 +587,19 @@ class Agent:
                 self.start_feat = self.feat(self.grid)
                 self.goal_now = translate(self.goal[0], self.goal[1], self.start_feat) or None
         self.seen.setdefault(self.state, self.grid)
-        if self.goal_now and not self.stalled:  # is the carried goal getting us anywhere?
+        if self.goal_conds and holds(self.goal_conds, self.feat_of(self.state)):
+            # the proposed goal is true on this screen and the level did not end: refuted by a counter-example
+            self.refuted.append(self.goal_why)
+            self.next_hypothesis()
+        if self.goal_now and not self.stalled:  # is the goal in test getting us anywhere?
             pr = self.progress_of(self.state)
             if pr > self.best_progress + 1e-9:
                 self.best_progress, self.since_progress = pr, 0
             else:
                 self.since_progress += 1
                 if self.since_progress > (self.budget // 2 if self.budget else 30):
-                    self.stalled, self.skill = True, None  # give up on it for this level: back to plain exploring
+                    self.next_hypothesis()  # give up on it: next proposal, or back to plain exploring
+        self.maybe_ask()
         b = self.player_box() if self.player else None
         if b:
             self.visited.add(b[:2])
@@ -611,6 +661,7 @@ class Agent:
         # deadline reasoning (E10): a game over at the step limit is a timeout, nobody's fault. Only a death
         # clearly before a limit already seen is blamed on what was just touched; the first one never is.
         self.attempt_steps += 1
+        self.level_steps += 1
         blame = died and ("deadline" in self.off or (self.budget is not None and self.attempt_steps < 0.8 * self.budget))
         if died:
             self.budget = max(self.budget or 0, self.attempt_steps)
@@ -683,6 +734,37 @@ class Agent:
     def active_goal(self):
         return self.goal_now if self.goal_now and not self.stalled else None
 
+    def next_hypothesis(self):
+        """Drop the goal in test; take the next proposal, or fall back to plain exploring."""
+        self.skill, self.fcache, self.best_progress, self.since_progress = None, {}, 0.0, 0
+        if self.hyps:
+            self.goal_why, self.goal_conds, self.goal_now = self.hyps.pop(0)
+        else:
+            self.goal_why, self.goal_conds, self.goal_now, self.stalled = None, None, None, True
+
+    def maybe_ask(self):
+        """Ask the LLM for goal hypotheses when the agent has looked around and has no goal to pursue.
+        Its answers are never trusted: anything already true on a non-winning screen is thrown out."""
+        if "llm" in self.off or not llm.enabled() or self.asks >= 2 or self.active_goal():
+            return
+        if self.level_steps < 12 or self.level_steps - self.last_ask < 60:
+            return
+        self.asks, self.last_ask = self.asks + 1, self.level_steps
+        start = self.feat(self.start_grid)
+        seen = [self.feat_of(s) for s in self.seen]
+        proposals = llm.propose(self, start, seen) or []
+        entry = {"level": self.level, "step": self.level_steps, "proposed": len(proposals), "kept": 0, "why": []}
+        self.llm_log.append(entry)
+        for why, conds in proposals:
+            schema = to_schema(conds, start)
+            if schema and not any(holds(conds, f) for f in seen):
+                self.hyps.append((why, conds, schema))
+                entry["kept"] += 1
+                entry["why"].append(why)
+        if self.hyps:
+            self.start_feat, self.stalled = start, False
+            self.next_hypothesis()
+
     def feat_of(self, s):
         if s not in self.feats:
             self.feats[s] = self.feat(self.seen[s]) if s in self.seen else {}
@@ -715,7 +797,8 @@ class Agent:
 
     def learn_goal(self, f_new):
         """At a win: contrast the winning screen (second-to-last frame, E10) with all non-winning screens."""
-        entry = {"level": self.level, "screens": len(self.seen), "schema": None, "rank": None}
+        entry = {"level": self.level, "screens": len(self.seen), "schema": None, "rank": None,
+                 "llm_goal": self.goal_why, "llm_goal_true_at_win": None, "llm_goals_refuted": len(self.refuted)}
         self.goal_log.append(entry)
         frames = f_new.frame or []
         # the last level has no "next level" frame: its final frame is the winning screen
@@ -725,6 +808,8 @@ class Agent:
         win = self.feat(np.array(shot[0]))
         others = [self.feat(g) for g in self.seen.values()]
         start = self.feat(self.start_grid)
+        if self.goal_conds:  # was the LLM's goal in test actually true on the winning screen?
+            entry["llm_goal_true_at_win"] = holds(self.goal_conds, win)
         if self.goal:  # measurement: would the goal learned earlier have picked out this winning screen?
             sch = translate(self.goal[0], self.goal[1], start)
             pw = progress(win, sch, start)

@@ -178,51 +178,83 @@ def test_goal_from_win():
     assert used[1] <= 7 and used[1] <= blind[1], (used, blind)
 
 
+REACH = [dict(player=(1, 5), target=(10, 5), walls=[(6, x) for x in range(1, 11)], junk=[]),
+         dict(player=(1, 1), target=(10, 10), walls=[], junk=[(1, 4, 6), (4, 1, 7), (3, 3, 8)])]
+
+
+def reach_game(agent, levels, max_steps=300):
+    """Toy "reach" world: walk next to the target (colour 3). Walls are colour 5; `junk` (y, x, colour) are
+    distractors. Returns the number of actions used per level."""
+    def scene(L, pos):
+        g = np.zeros((12, 12), int)
+        for y, x in L["walls"]:
+            g[y, x] = 5
+        for y, x, c in L["junk"]:
+            g[y, x] = c
+        g[L["target"]] = 3
+        g[pos] = 2
+        return g
+    used, lvl = [0] * len(levels), 0
+    L, pos = levels[0], levels[0]["player"]
+    f = frame(scene(L, pos), actions=(1, 2, 3, 4))
+    for _ in range(max_steps):
+        act, _ = agent.choose(f)
+        used[lvl] += 1
+        dy, dx = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[act]
+        ny, nx = pos[0] + dy, pos[1] + dx
+        if 0 <= ny < 12 and 0 <= nx < 12 and scene(L, pos)[ny, nx] == 0:
+            pos = (ny, nx)
+        if max(abs(pos[0] - L["target"][0]), abs(pos[1] - L["target"][1])) > 1:  # not yet touching (diagonal counts)
+            f2 = frame(scene(L, pos), levels=lvl, actions=(1, 2, 3, 4))
+        else:
+            won, lvl = scene(L, pos), lvl + 1
+            if lvl == len(levels):
+                agent.update(f, frame(won, levels=lvl, state="WIN", actions=(1, 2, 3, 4)))
+                break
+            L, pos = levels[lvl], levels[lvl]["player"]
+            f2 = frame(scene(L, pos), levels=lvl, actions=(1, 2, 3, 4), before=won)
+        agent.update(f, f2)
+        f = f2
+    return used
+
+
 def test_general_reasoning():
-    # same reasoning code, a different kind of world: walk to a target (colour 3); distractors lie nearer.
-    def reach_game(agent, max_steps=200):
-        levels = [dict(player=(1, 5), target=(10, 5), walls=[(6, x) for x in range(1, 11)], junk=[]),
-                  dict(player=(1, 1), target=(10, 10), walls=[], junk=[(1, 4, 6), (4, 1, 7), (3, 3, 8)])]
-        def scene(L, pos):
-            g = np.zeros((12, 12), int)
-            for y, x in L["walls"]:
-                g[y, x] = 5
-            for y, x, c in L["junk"]:
-                g[y, x] = c
-            g[L["target"]] = 3
-            g[pos] = 2
-            return g
-        used, lvl = [0, 0], 0
-        L, pos = levels[0], levels[0]["player"]
-        f = frame(scene(L, pos), actions=(1, 2, 3, 4))
-        for _ in range(max_steps):
-            act, _ = agent.choose(f)
-            used[lvl] += 1
-            dy, dx = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[act]
-            ny, nx = pos[0] + dy, pos[1] + dx
-            if 0 <= ny < 12 and 0 <= nx < 12 and scene(L, pos)[ny, nx] == 0:
-                pos = (ny, nx)
-            if abs(pos[0] - L["target"][0]) + abs(pos[1] - L["target"][1]) > 1:
-                f2 = frame(scene(L, pos), levels=lvl, actions=(1, 2, 3, 4))
-            else:
-                won, lvl = scene(L, pos), lvl + 1
-                if lvl == 2:
-                    agent.update(f, frame(won, levels=2, state="WIN", actions=(1, 2, 3, 4)))
-                    break
-                L, pos = levels[1], levels[1]["player"]
-                f2 = frame(scene(L, pos), levels=1, actions=(1, 2, 3, 4), before=won)
-            agent.update(f, f2)
-            f = f2
-        return used
+    # same reasoning code, a different kind of world: walk to a target; in level 2 distractors lie nearer.
     agent = Agent()
-    used, blind = reach_game(agent), reach_game(Agent(off={"goal"}))
+    used, blind = reach_game(agent, REACH), reach_game(Agent(off={"goal"}), REACH)
     schema = agent.mem.goals[0][0]
     assert schema[("dist", "colour", 3)][:2] == (-1, True), schema     # "touching the target" learned by contrast
-    assert used[1] < blind[1] and used[1] <= 24, (used, blind)         # shortest route is 17 moves
+    assert used[1] < blind[1] and used[1] <= 24, (used, blind)         # shortest route is 16 moves
     # same world with colours renamed and the grid mirrored: the same number of actions
     plain = collect_game(Agent(), COLLECT)
     renamed = collect_game(Agent(), COLLECT, cmap={4: 9, 9: 4, 7: 1, 2: 12, 3: 11}, flip=True)
     assert plain == renamed, (plain, renamed)
+
+
+def test_llm_goals_are_checked():
+    import json
+
+    import llm
+    assert llm.ask("anything") is None                                  # no endpoint configured: no LLM, no error
+    answer = {"goals": [
+        {"why": "a target exists", "all": [{"measure": "count", "colour": 3, "op": "==", "value": 1}]},   # already true
+        {"why": "touch the colour-8 thing", "all": [{"measure": "dist", "colour": 8, "op": "==", "value": 0}]},  # wrong
+        {"why": "touch the target", "all": [{"measure": "dist", "colour": 3, "op": "==", "value": 0}]},   # right
+        {"why": "nonsense", "all": [{"measure": "smell", "colour": 3, "op": "==", "value": 0}]}]}          # not in the language
+    saved = llm.enabled, llm.ask
+    llm.enabled, llm.ask = (lambda: True), (lambda prompt, image=None, **kw: "Here you go:\n" + json.dumps(answer))
+    try:
+        agent = Agent()
+        used = reach_game(agent, REACH[1:])
+    finally:
+        llm.enabled, llm.ask = saved
+    blind = reach_game(Agent(), REACH[1:])
+    asked = agent.llm_log[0]
+    assert asked["proposed"] == 3 and "a target exists" not in asked["why"], asked   # invalid dropped, already-true rejected
+    won = agent.goal_log[-1]
+    assert won["llm_goal"] == "touch the target" and won["llm_goal_true_at_win"] is True, won
+    assert used[0] <= blind[0], (used, blind)
+    return used, blind, asked, won
 
 
 def test_timeout_is_not_deadly():
@@ -253,6 +285,7 @@ def test_timeout_is_not_deadly():
 if __name__ == "__main__":
     test_goal_from_win()
     test_general_reasoning()
+    test_llm_goals_are_checked()
     test_timeout_is_not_deadly()
     test_frontier_exploration()
     test_structure_mapping()
