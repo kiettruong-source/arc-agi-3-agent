@@ -65,12 +65,12 @@ computes the first seven from a run file.
 | 5 | Share of actions that execute a known skill or plan | acting from knowledge vs searching (Twin: 93%) | skill usage | 7% |
 | 6 | Breadth | generality across games | games with ≥ 1 level solved | 6 of 15 |
 | 7 | Transfer inside a game | does knowledge carry to the next level? | ours ÷ human per level; should fall | vc33: 5.4 → 23.1 (rises: no transfer) |
-| 8 | Prediction accuracy | modeling: does the agent know what an action will do? | before each action predict from the operator table whether / what changes; share right | not measured yet |
-| 9 | Goal precision | goal-setting | share of won levels where the goal in test was true on the winning screen; first hypothesis right (Twin: 87%) | too few cases (goal rank 0.05–0.23, one case) |
-| 10 | Generalization gap | generalization | every metric on held-out minus dev | not run (held-out reserved) |
-| 11 | Renaming robustness | generalization | same games with colours permuted and the grid mirrored; change in levels / actions | toy worlds only: no change |
-| 12 | Memory ablation | cross-game transfer | memory carried from earlier games vs fresh memory | not run |
-| 13 | Cost | practicality | seconds per action; LLM calls per level | not recorded |
+| 8 | Prediction accuracy | modeling: does the agent know what an action will do? | before each action predict whether the screen will change; share right | 85% right, guess made for 98% of actions (commoner-outcome baseline 62%) — E18 |
+| 9 | Goal precision | goal-setting | share of won levels where the goal in test was true on the winning screen; first hypothesis right (Twin: 87%) | 1 of 1 case, and that goal had been given up before the win — E18 |
+| 10 | Generalization gap | generalization | every metric on held-out minus dev (`agi_metrics.py --vs`) | built; not run (held-out reserved) |
+| 11 | Renaming robustness | generalization | same games with colours permuted and the grid mirrored (`run.py --rename N`); change in levels / score | **not robust:** score 0.28 plain vs 0.04, 0.13, 0.13 renamed; levels 7 vs 6, 7, 6 — E18 |
+| 12 | Memory ablation | cross-game transfer | memory carried from earlier games vs fresh memory (`run.py --fresh-memory`) | carried 7 levels, fresh 6; same score: no systematic transfer — E18 |
+| 13 | Cost | practicality | agent time per action; LLM calls | 4.4 ms per action; 0 LLM calls — E18 |
 
 Facts from the paper that matter for reading our numbers: the human baseline is the **second-best first-run human of
 ten testers** per level (not a median); the official per-level score is capped at 1.0 (the toolkit allows 1.15, which
@@ -266,7 +266,29 @@ acted on).
 
 ### Where the target stands (2026-11-12)
 - **Best play: 1.97** — the target of 0.9 is reached, with solutions the agent found itself; it is not a measure of learning efficiency.
-- **First exposure: 0.28** (from 0.15). By the accounting of E14, 0.9 would need two more first levels found within the human action count: cd82 (55 actions; the agent needs 223, its route is 5) and sp80 (39; the agent needs 245, its route is 4). Their solutions are short; what is missing is knowing what to aim for before the first win — the job of the LLM reasoner (E13, not yet run with a real model).
+- **First exposure: 0.28 in the plain view, but only 0.04–0.13 when the games are shown with renamed colours and mirrored (E18); a fair figure is about 0.15.** By the accounting of E14, 0.9 would need two more first levels found within the human action count: cd82 (55 actions; the agent needs 223, its route is 5) and sp80 (39; the agent needs 245, its route is 4). Their solutions are short; what is missing is knowing what to aim for before the first win — the job of the LLM reasoner (E13, not yet run with a real model).
+
+### E18 — New measurements: prediction, goal precision, renaming, memory, cost (2026-11-12)
+- **Built (commit `ee86885`):** the agent predicts before every action whether the screen will change (from the same action on the same screen, else the object type's history, else the action's history) and scores itself; it records whether the goal in test was true on the winning screen; `run.py --rename N` shows every game with colours permuted and the grid mirrored (clicks mapped back); `--fresh-memory` empties the memory before every game; agent time per action is recorded; `scripts/agi_metrics.py --vs` compares runs.
+- **Runs (dev, seed 0 unless stated):** `v6-metrics` (plain, 3 seeds), `v6-rename1/2/3`, `v6-fresh-memory`.
+
+  | | plain | renamed 1 | renamed 2 | renamed 3 | fresh memory |
+  |---|---|---|---|---|---|
+  | levels (first exposure) | 7 | 6 | 7 | 6 | 6 |
+  | score (first exposure) | 0.28 | 0.04 | 0.13 | 0.13 | 0.28 |
+  | score (best play) | 1.97 | 1.74 | 1.92 | 1.74 | 1.83 |
+  | solved levels within 5× the human count | 2 | 1 | 3 | 2 | 2 |
+  | discovery cost (actions per route step) | 28 | 36 | 44 | 32 | 36 |
+  | predictions right (baseline) | 85% (62%) | 87% (59%) | 87% (61%) | 88% (60%) | 86% (62%) |
+  | agent time per action | 5.1 ms (4.4 alone) | 5.6 | 5.6 | 5.6 | 5.7 |
+
+- **Prediction:** a guess is made for 98% of actions and is right 85% of the time (always guessing the commoner outcome: 62%). By basis (seed 0): same action seen on the same screen 99%, object type's history 85%, action's history 80%. The same action on the same screen gave the same screen 96% of about 7,000 times. The prediction is only "does the screen change", not what changes.
+- **Goal precision:** one case (vc33 level 2): the carried goal was true on the winning screen, but the agent had given it up before the win. Too few cases for a rate.
+- **Renaming robustness — the main finding:** the result depends on what the game looks like. tn36's first level (worth 3.57 of the 4.1 first-exposure points) is won in the plain view and **lost in all three renamed views**; ls20's first level takes 368 actions in the plain view and 35 in two of the renamed views; s5i5's is won in one renamed view only. Over the four views the first-exposure score is 0.04–0.28 (mean 0.15) and levels are 6–7. Best play stays above the target in every view (1.74–1.97).
+- **Cause in tn36 (traces):** with memory from eleven earlier games the agent goes straight to the graph search. Its order of untried objects inside one size tier follows the colour numbers. In the plain view the six small switches come first (won after 13 actions); renamed, the 40 tiles come first, two of them change something, so the cluster rule keeps all tiles in play, and the level is not won in 120 actions.
+- **Memory ablation:** with an empty memory per game: 6 levels (tu93 lost), same score, tn36 in 20 instead of 13 actions, sp80 in 214 instead of 245. No systematic gain from carrying memory across games; what is carried mostly changes which skill runs.
+- **Generalization gap:** the comparison is built (`agi_metrics.py dev.json --vs heldout.json`); not run — the held-out games stay untouched until the user decides.
+- **Conclusion:** the first-exposure gain of E17 (0.15 → 0.28) is **not robust**: it came from an accident of object order. A fair first-exposure figure today is about 0.15 (0.04–0.28 over four views). Renamed views are the better "seeds" for this agent (F31). The measurements themselves work and stay.
 
 ## 4. Summary of results
 

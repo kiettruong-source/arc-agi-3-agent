@@ -14,6 +14,8 @@ cp .env.example .env          # optional: ARC_API_KEY (an anonymous key is used 
 uv run play.py ls20           # play by hand: wasd, e, 6 X Y to click, u undo, r reset, q quit
 uv run run.py dev --seeds 3 --label NAME   # evaluate on the dev games; --label saves the result to runs/
 uv run run.py dev --seeds 3 --clean-run    # also replay the found solutions in a fresh play ("best play" number)
+uv run run.py dev --rename 1               # robustness: same games, colours renamed and grid mirrored
+uv run run.py dev --fresh-memory           # transfer: empty memory before every game
 uv run python scripts/score_anatomy.py runs/FILE.json   # where the score points come from
 uv run python scripts/agi_metrics.py runs/FILE.json     # additional metrics: efficiency, discovery cost, route quality, breadth, transfer
 uv run run.py dev --seeds 3 --agent random   # baseline
@@ -62,8 +64,9 @@ uv run python scripts/info_gathering.py   # exploration metrics vs random
    and never trusted: the core rejects what the evidence already contradicts and refutes the rest in play.
    Scripts for a GPU cluster are in `cluster/`.
 
-Current state (15 dev games, 3 seeds, `docs/protocol.md`): **first exposure 0.28** (7 levels; random baseline 0.11,
-1.33 levels), **best play 1.97**. The goal reasoning works on toy worlds but has not yet improved the dev-game
+Current state (15 dev games, `docs/protocol.md`): **first exposure 0.28** in the plain view (7 levels; random baseline
+0.11, 1.33 levels) but only 0.04–0.13 when the same games are shown with renamed colours and mirrored (E18), so a
+fair figure is about 0.15; **best play 1.74–1.97**. The goal reasoning works on toy worlds but has not yet improved the dev-game
 result (E12, a negative result); the LLM reasoner has not yet been run with a real model (E13).
 
 ## Evaluation metric
